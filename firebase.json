@@ -24,7 +24,7 @@
   },
   "hosting": {
     "site": "pulsar-7d45e",
-    "public": "landing",
+    "public": "build/web",
     "ignore": [
       "firebase.json",
       "**/.*",
@@ -38,9 +38,16 @@
     ],
     "headers": [
       {
-        "source": "**/*.@(zip|exe)",
+        "source": "**/*.@(js|wasm)",
         "headers": [
-          { "key": "Content-Disposition", "value": "attachment" }
+          { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+          { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" }
+        ]
+      },
+      {
+        "source": "/index.html",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
         ]
       }
     ]

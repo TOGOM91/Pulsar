@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
-import 'package:isar/isar.dart';
-import '../../../core/database/isar_collections.dart';
+import 'package:drift/drift.dart';
+import '../../../core/database/app_database.dart';
 import '../../admin/domain/role.dart';
 
 /// Result of an auth operation.
@@ -20,12 +20,11 @@ final class AuthFailure extends AuthResult {
   const AuthFailure(this.message);
 }
 
-/// Local auth service — Isar-backed, multi-account, SHA-256 + salt hashing.
-/// Sign out clears the session record but never deletes profiles.
+/// Local auth service — SQLite-backed, multi-account, SHA-256 + salt hashing.
 class AuthService {
-  final Isar _isar;
+  final AppDatabase _db;
 
-  AuthService(this._isar);
+  AuthService(this._db);
 
   static const _sessionKey = 'session';
 
@@ -55,56 +54,58 @@ class AuthService {
 
   // ── Session ──
 
-  /// Returns the currently logged-in profile, or null.
-  /// Auto-promotes whitelisted emails to `owner` role.
   Future<IsarUserProfile?> currentUser() async {
-    final session = await _isar.isarAuthSessions
-        .filter()
-        .keyEqualTo(_sessionKey)
-        .findFirst();
+    final session = await (_db.select(_db.isarAuthSessions)
+          ..where((s) => s.key.equals(_sessionKey)))
+        .getSingleOrNull();
     final email = session?.activeEmail;
     if (email == null || email.isEmpty) return null;
     final profile = await _findByEmail(email);
     if (profile != null) {
       await _ensureOwnerPromotion(profile);
+      return _findByEmail(email);
     }
     return profile;
   }
 
-  /// Apply owner whitelist promotion at session start.
   Future<void> _ensureOwnerPromotion(IsarUserProfile profile) async {
     if (kOwnerEmails.contains(profile.email) && profile.role != 'owner') {
-      profile.role = 'owner';
-      await _isar.writeTxn(() async {
-        await _isar.isarUserProfiles.put(profile);
-      });
+      await (_db.update(_db.isarUserProfiles)
+            ..where((u) => u.email.equals(profile.email)))
+          .write(const IsarUserProfilesCompanion(role: Value('owner')));
     }
   }
 
   Future<void> _setSession(String? email) async {
-    final existing = await _isar.isarAuthSessions
-        .filter()
-        .keyEqualTo(_sessionKey)
-        .findFirst();
-    final session = existing ?? (IsarAuthSession()..key = _sessionKey);
-    session.activeEmail = email;
-    session.loggedInAt = email != null ? DateTime.now() : null;
-    await _isar.writeTxn(() async {
-      await _isar.isarAuthSessions.put(session);
-    });
+    final existing = await (_db.select(_db.isarAuthSessions)
+          ..where((s) => s.key.equals(_sessionKey)))
+        .getSingleOrNull();
+    if (existing != null) {
+      await (_db.update(_db.isarAuthSessions)
+            ..where((s) => s.isarId.equals(existing.isarId)))
+          .write(IsarAuthSessionsCompanion(
+        activeEmail: Value(email),
+        loggedInAt: Value(email != null ? DateTime.now() : null),
+      ));
+    } else {
+      await _db.into(_db.isarAuthSessions).insert(
+            IsarAuthSessionsCompanion.insert(
+              key: _sessionKey,
+              activeEmail: Value(email),
+              loggedInAt: Value(email != null ? DateTime.now() : null),
+            ),
+          );
+    }
   }
 
   Future<IsarUserProfile?> _findByEmail(String email) {
-    return _isar.isarUserProfiles
-        .filter()
-        .emailEqualTo(email.toLowerCase().trim(),
-            caseSensitive: false)
-        .findFirst();
+    return (_db.select(_db.isarUserProfiles)
+          ..where((u) => u.email.equals(email.toLowerCase().trim())))
+        .getSingleOrNull();
   }
 
-  /// All registered accounts (for an "accounts" picker UI).
   Future<List<IsarUserProfile>> allAccounts() {
-    return _isar.isarUserProfiles.where().findAll();
+    return _db.select(_db.isarUserProfiles).get();
   }
 
   // ── Register ──
@@ -135,33 +136,19 @@ class AuthService {
     }
 
     final now = DateTime.now();
-    final profile = IsarUserProfile()
-      ..email = lowerEmail
-      ..name = trimmedName
-      ..passwordHash = hashPassword(password)
-      ..memberSince = now.year
-      ..genres = []
-      ..budgetMax = 300
-      ..locationName = ''
-      ..language = 'fr'
-      ..darkMode = false
-      ..notificationsEnabled = true
-      ..ecoMode = true
-      ..isOnboarded = false
-      ..eventsBooked = 0
-      ..co2SavedKg = 0
-      ..moneySavedEur = 0
-      ..percentile = 50
-      ..createdAt = now
-      ..lastLoginAt = now
-      ..role = kOwnerEmails.contains(lowerEmail) ? 'owner' : 'user';
-
-    await _isar.writeTxn(() async {
-      await _isar.isarUserProfiles.put(profile);
-    });
+    await _db.into(_db.isarUserProfiles).insert(IsarUserProfilesCompanion.insert(
+          email: lowerEmail,
+          name: trimmedName,
+          passwordHash: Value(hashPassword(password)),
+          memberSince: now.year,
+          createdAt: now,
+          lastLoginAt: Value(now),
+          role: Value(kOwnerEmails.contains(lowerEmail) ? 'owner' : 'user'),
+        ));
     await _setSession(lowerEmail);
 
-    return AuthSuccess(profile);
+    final profile = await _findByEmail(lowerEmail);
+    return AuthSuccess(profile!);
   }
 
   // ── Sign in ──
@@ -178,8 +165,7 @@ class AuthService {
 
     final profile = await _findByEmail(lowerEmail);
     if (profile == null) {
-      return const AuthFailure(
-          "Aucun compte n'existe avec cet email.");
+      return const AuthFailure("Aucun compte n'existe avec cet email.");
     }
     if (!verifyPassword(password, profile.passwordHash)) {
       return const AuthFailure('Mot de passe incorrect.');
@@ -190,19 +176,22 @@ class AuthService {
       );
     }
 
-    profile.lastLoginAt = DateTime.now();
-    if (kOwnerEmails.contains(lowerEmail)) profile.role = 'owner';
-    await _isar.writeTxn(() async {
-      await _isar.isarUserProfiles.put(profile);
-    });
+    await (_db.update(_db.isarUserProfiles)
+          ..where((u) => u.email.equals(lowerEmail)))
+        .write(IsarUserProfilesCompanion(
+      lastLoginAt: Value(DateTime.now()),
+      role: kOwnerEmails.contains(lowerEmail)
+          ? const Value('owner')
+          : const Value.absent(),
+    ));
     await _setSession(lowerEmail);
 
-    return AuthSuccess(profile);
+    final fresh = await _findByEmail(lowerEmail);
+    return AuthSuccess(fresh!);
   }
 
   // ── Sign out ──
 
-  /// Clear active session. Does NOT delete the profile.
   Future<void> signOut() async {
     await _setSession(null);
   }
@@ -233,47 +222,57 @@ class AuthService {
     final profile = await currentUser();
     if (profile == null) return null;
 
-    if (genres != null) profile.genres = genres;
-    if (budgetMax != null) profile.budgetMax = budgetMax;
-    if (locationName != null) profile.locationName = locationName;
-    if (ecoMode != null) profile.ecoMode = ecoMode;
-    if (isOnboarded != null) profile.isOnboarded = isOnboarded;
-    if (name != null) profile.name = name;
-    if (avatarUrl != null) profile.avatarUrl = avatarUrl;
-    if (phone != null) profile.phone = phone;
-    if (bio != null) profile.bio = bio;
-    if (notificationsEnabled != null) {
-      profile.notificationsEnabled = notificationsEnabled;
-    }
-    if (emailNotificationsEnabled != null) {
-      profile.emailNotificationsEnabled = emailNotificationsEnabled;
-    }
-    if (socialNotificationsEnabled != null) {
-      profile.socialNotificationsEnabled = socialNotificationsEnabled;
-    }
-    if (showCarbonFootprint != null) {
-      profile.showCarbonFootprint = showCarbonFootprint;
-    }
-    if (language != null) profile.language = language;
-    if (darkMode != null) profile.darkMode = darkMode;
-    if (co2SavedKgDelta != null) profile.co2SavedKg += co2SavedKgDelta;
-    if (eventsBookedDelta != null) profile.eventsBooked += eventsBookedDelta;
-    if (moneySavedDelta != null) profile.moneySavedEur += moneySavedDelta;
-    if (percentile != null) profile.percentile = percentile;
+    final companion = IsarUserProfilesCompanion(
+      genres: genres != null ? Value(genres) : const Value.absent(),
+      budgetMax: budgetMax != null ? Value(budgetMax) : const Value.absent(),
+      locationName:
+          locationName != null ? Value(locationName) : const Value.absent(),
+      ecoMode: ecoMode != null ? Value(ecoMode) : const Value.absent(),
+      isOnboarded:
+          isOnboarded != null ? Value(isOnboarded) : const Value.absent(),
+      name: name != null ? Value(name) : const Value.absent(),
+      avatarUrl: avatarUrl != null ? Value(avatarUrl) : const Value.absent(),
+      phone: phone != null ? Value(phone) : const Value.absent(),
+      bio: bio != null ? Value(bio) : const Value.absent(),
+      notificationsEnabled: notificationsEnabled != null
+          ? Value(notificationsEnabled)
+          : const Value.absent(),
+      emailNotificationsEnabled: emailNotificationsEnabled != null
+          ? Value(emailNotificationsEnabled)
+          : const Value.absent(),
+      socialNotificationsEnabled: socialNotificationsEnabled != null
+          ? Value(socialNotificationsEnabled)
+          : const Value.absent(),
+      showCarbonFootprint: showCarbonFootprint != null
+          ? Value(showCarbonFootprint)
+          : const Value.absent(),
+      language: language != null ? Value(language) : const Value.absent(),
+      darkMode: darkMode != null ? Value(darkMode) : const Value.absent(),
+      co2SavedKg: co2SavedKgDelta != null
+          ? Value(profile.co2SavedKg + co2SavedKgDelta)
+          : const Value.absent(),
+      eventsBooked: eventsBookedDelta != null
+          ? Value(profile.eventsBooked + eventsBookedDelta)
+          : const Value.absent(),
+      moneySavedEur: moneySavedDelta != null
+          ? Value(profile.moneySavedEur + moneySavedDelta)
+          : const Value.absent(),
+      percentile:
+          percentile != null ? Value(percentile) : const Value.absent(),
+    );
 
-    await _isar.writeTxn(() async {
-      await _isar.isarUserProfiles.put(profile);
-    });
-    return profile;
+    await (_db.update(_db.isarUserProfiles)
+          ..where((u) => u.email.equals(profile.email)))
+        .write(companion);
+    return _findByEmail(profile.email);
   }
 
-  /// Permanently delete the active account.
   Future<void> deleteAccount() async {
     final profile = await currentUser();
     if (profile == null) return;
-    await _isar.writeTxn(() async {
-      await _isar.isarUserProfiles.delete(profile.isarId);
-    });
+    await (_db.delete(_db.isarUserProfiles)
+          ..where((u) => u.isarId.equals(profile.isarId)))
+        .go();
     await _setSession(null);
   }
 

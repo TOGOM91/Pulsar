@@ -1,40 +1,33 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:isar/isar.dart';
-import '../database/isar_service.dart';
+import '../database/app_database.dart';
 import '../../features/events/data/event_repository.dart';
 import '../../features/cart/data/cart_repository.dart';
 import '../../features/cart/data/order_repository.dart';
 import '../../features/tickets/data/ticket_repository.dart';
 
-/// Provides the Isar database instance.
-final isarProvider = FutureProvider<Isar>((ref) async {
-  return IsarService.instance;
+/// Top-level database. Initialized in main.dart, overridden via ProviderScope.
+final appDatabaseProvider = Provider<AppDatabase>((ref) {
+  throw UnimplementedError(
+    'appDatabaseProvider must be overridden in main.dart',
+  );
 });
 
 /// Event repository provider.
 final eventRepositoryProvider = Provider<EventRepository>((ref) {
-  final isar = ref.watch(isarProvider).value;
-  if (isar == null) throw StateError('Isar not initialized');
-  return EventRepository(isar);
+  return EventRepository(ref.watch(appDatabaseProvider));
 });
 
 /// Cart repository provider.
 final cartRepositoryProvider = Provider<CartRepository>((ref) {
-  final isar = ref.watch(isarProvider).value;
-  if (isar == null) throw StateError('Isar not initialized');
-  return CartRepository(isar);
+  return CartRepository(ref.watch(appDatabaseProvider));
 });
 
 /// Ticket repository provider.
 final ticketRepositoryProvider = Provider<TicketRepository>((ref) {
-  final isar = ref.watch(isarProvider).value;
-  if (isar == null) throw StateError('Isar not initialized');
-  return TicketRepository(isar);
+  return TicketRepository(ref.watch(appDatabaseProvider));
 });
 
 /// Order repository provider.
 final orderRepositoryProvider = Provider<OrderRepository>((ref) {
-  final isar = ref.watch(isarProvider).value;
-  if (isar == null) throw StateError('Isar not initialized');
-  return OrderRepository(isar);
+  return OrderRepository(ref.watch(appDatabaseProvider));
 });

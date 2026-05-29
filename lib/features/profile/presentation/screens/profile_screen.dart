@@ -4,7 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/app_theme.dart';
-import '../../../../core/database/isar_collections.dart';
+import '../../../../core/database/app_database.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../admin/presentation/providers/admin_provider.dart';
 
@@ -284,7 +284,7 @@ class _EcoScoreCard extends StatelessWidget {
                           BorderRadius.circular(PulsarTokens.radiusFull),
                     ),
                     child: const Text(
-                      '🏅 Voyageur Écoresponsable',
+                      '�?� Voyageur Écoresponsable',
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w800,
@@ -346,7 +346,7 @@ class _StatsRow extends StatelessWidget {
                 color: PulsarColors.primary,
               ),
               _StatItem(
-                emoji: '🌍',
+                emoji: '�?',
                 value: profile.co2SavedKg.toStringAsFixed(0),
                 unit: 'kg',
                 label: 'CO₂ évités',

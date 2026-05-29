@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1200" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <!-- Arrow marker (crow's foot - many) -->
+    <marker id="many" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="14" markerHeight="14" orient="auto">
+      <path d="M 0 6 L 11 1 M 0 6 L 11 6 M 0 6 L 11 11" fill="none" stroke="#6366F1" stroke-width="1.5" stroke-linecap="round"/>
+    </marker>
+    <!-- One marker -->
+    <marker id="one" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="14" markerHeight="14" orient="auto">
+      <path d="M 4 0 L 4 12 M 8 0 L 8 12" fill="none" stroke="#6366F1" stroke-width="1.5" stroke-linecap="round"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1600" height="1200" fill="#F8FAFC"/>
+
+  <!-- Title -->
+  <text x="800" y="45" text-anchor="middle" font-size="26" font-weight="700" fill="#0F172A">Pulsar — Schéma Base de Données (Isar)</text>
+  <text x="800" y="70" text-anchor="middle" font-size="14" fill="#64748B">5 collections locales • Offline-first</text>
+
+  <!-- ============================================= -->
+  <!-- IsarUserProfile (center-left) -->
+  <!-- ============================================= -->
+  <g>
+    <rect x="60" y="120" width="340" height="480" rx="12" fill="#FFFFFF" stroke="#7C3AED" stroke-width="2"/>
+    <!-- Header -->
+    <rect x="60" y="120" width="340" height="44" rx="12" fill="#7C3AED"/>
+    <rect x="60" y="148" width="340" height="16" fill="#7C3AED"/>
+    <text x="230" y="149" text-anchor="middle" font-size="16" font-weight="700" fill="#FFFFFF">IsarUserProfile</text>
+
+    <!-- Fields -->
+    <g font-size="13" fill="#0F172A">
+      <text x="80" y="190"><tspan font-weight="700" fill="#7C3AED">PK</tspan>  isarId : Id</text>
+      <text x="80" y="215"><tspan font-weight="700" fill="#10B981">UK</tspan>  odentifier : String</text>
+      <text x="80" y="240">     name : String</text>
+      <text x="80" y="265">     email : String</text>
+      <text x="80" y="290">     avatarUrl : String?</text>
+      <text x="80" y="315">     memberSince : int</text>
+      <text x="80" y="340">     genres : List&lt;String&gt;</text>
+      <text x="80" y="365">     budgetMax : double</text>
+      <text x="80" y="390">     locationName : String</text>
+      <text x="80" y="415">     language : String</text>
+      <text x="80" y="440">     darkMode : bool</text>
+      <text x="80" y="465">     notificationsEnabled : bool</text>
+      <text x="80" y="490">     ecoMode : bool</text>
+      <text x="80" y="515">     eventsBooked : int</text>
+      <text x="80" y="540">     co2SavedKg : double</text>
+      <text x="80" y="565">     moneySavedEur : double</text>
+      <text x="80" y="590">     percentile : int</text>
+    </g>
+  </g>
+
+  <!-- ============================================= -->
+  <!-- IsarEvent (center-right) -->
+  <!-- ============================================= -->
+  <g>
+    <rect x="1200" y="120" width="340" height="600" rx="12" fill="#FFFFFF" stroke="#EC4899" stroke-width="2"/>
+    <rect x="1200" y="120" width="340" height="44" rx="12" fill="#EC4899"/>
+    <rect x="1200" y="148" width="340" height="16" fill="#EC4899"/>
+    <text x="1370" y="149" text-anchor="middle" font-size="16" font-weight="700" fill="#FFFFFF">IsarEvent</text>
+
+    <g font-size="13" fill="#0F172A">
+      <text x="1220" y="190"><tspan font-weight="700" fill="#7C3AED">PK</tspan>  isarId : Id</text>
+      <text x="1220" y="215"><tspan font-weight="700" fill="#10B981">UK</tspan>  eventId : String</text>
+      <text x="1220" y="240">     name : String</text>
+      <text x="1220" y="265">     category : String</text>
+      <text x="1220" y="290">     duration : String</text>
+      <text x="1220" y="315">     imageUrl : String</text>
+      <text x="1220" y="340">     gradient : String</text>
+      <text x="1220" y="365">     date : String</text>
+      <text x="1220" y="390">     location : String</text>
+      <text x="1220" y="415">     transport : String</text>
+      <text x="1220" y="440">     accommodation : String?</text>
+      <text x="1220" y="465">     pricingLabel : String</text>
+      <text x="1220" y="490">     pricingAmount : double</text>
+      <text x="1220" y="515">     pricingSavings : double?</text>
+      <text x="1220" y="540">     pricingSavingsText : String?</text>
+      <text x="1220" y="565">     currency : String</text>
+      <text x="1220" y="590">     genres : List&lt;String&gt;</text>
+      <text x="1220" y="615">     badgeTypes : List&lt;String&gt;</text>
+      <text x="1220" y="640">     badgeTexts : List&lt;String&gt;</text>
+      <text x="1220" y="665">     isFavorite : bool</text>
+      <text x="1220" y="690">     section : String</text>
+      <text x="1220" y="710">     sortOrder : int</text>
+    </g>
+  </g>
+
+  <!-- ============================================= -->
+  <!-- IsarTicket (top center) -->
+  <!-- ============================================= -->
+  <g>
+    <rect x="600" y="120" width="340" height="370" rx="12" fill="#FFFFFF" stroke="#10B981" stroke-width="2"/>
+    <rect x="600" y="120" width="340" height="44" rx="12" fill="#10B981"/>
+    <rect x="600" y="148" width="340" height="16" fill="#10B981"/>
+    <text x="770" y="149" text-anchor="middle" font-size="16" font-weight="700" fill="#FFFFFF">IsarTicket</text>
+
+    <g font-size="13" fill="#0F172A">
+      <text x="620" y="190"><tspan font-weight="700" fill="#7C3AED">PK</tspan>  isarId : Id</text>
+      <text x="620" y="215"><tspan font-weight="700" fill="#10B981">UK</tspan>  ticketId : String</text>
+      <text x="620" y="240"><tspan font-weight="700" fill="#F59E0B">FK</tspan>  eventId : String</text>
+      <text x="620" y="265">     eventName : String</text>
+      <text x="620" y="290">     eventDate : String</text>
+      <text x="620" y="315">     eventLocation : String</text>
+      <text x="620" y="340">     eventImageUrl : String?</text>
+      <text x="620" y="365">     price : double</text>
+      <text x="620" y="390">     ticketType : String</text>
+      <text x="620" y="415">     status : String</text>
+      <text x="620" y="440">     purchaseDate : DateTime</text>
+      <text x="620" y="465">     qrCodeData : String?</text>
+    </g>
+  </g>
+
+  <!-- ============================================= -->
+  <!-- IsarCartItem (bottom center) -->
+  <!-- ============================================= -->
+  <g>
+    <rect x="600" y="560" width="340" height="370" rx="12" fill="#FFFFFF" stroke="#F59E0B" stroke-width="2"/>
+    <rect x="600" y="560" width="340" height="44" rx="12" fill="#F59E0B"/>
+    <rect x="600" y="588" width="340" height="16" fill="#F59E0B"/>
+    <text x="770" y="589" text-anchor="middle" font-size="16" font-weight="700" fill="#FFFFFF">IsarCartItem</text>
+
+    <g font-size="13" fill="#0F172A">
+      <text x="620" y="630"><tspan font-weight="700" fill="#7C3AED">PK</tspan>  isarId : Id</text>
+      <text x="620" y="655"><tspan font-weight="700" fill="#F59E0B">FK</tspan><tspan font-weight="700" fill="#10B981">+UK</tspan> eventId : String</text>
+      <text x="620" y="680">     eventName : String</text>
+      <text x="620" y="705">     eventDate : String</text>
+      <text x="620" y="730">     eventLocation : String</text>
+      <text x="620" y="755">     eventImageUrl : String?</text>
+      <text x="620" y="780">     unitPrice : double</text>
+      <text x="620" y="805">     quantity : int</text>
+      <text x="620" y="830">     ticketType : String</text>
+      <text x="620" y="855">     transportPrice : double?</text>
+      <text x="620" y="880">     accommodationPrice : double?</text>
+    </g>
+  </g>
+
+  <!-- ============================================= -->
+  <!-- IsarFavorite (bottom left) -->
+  <!-- ============================================= -->
+  <g>
+    <rect x="60" y="690" width="340" height="180" rx="12" fill="#FFFFFF" stroke="#EF4444" stroke-width="2"/>
+    <rect x="60" y="690" width="340" height="44" rx="12" fill="#EF4444"/>
+    <rect x="60" y="718" width="340" height="16" fill="#EF4444"/>
+    <text x="230" y="719" text-anchor="middle" font-size="16" font-weight="700" fill="#FFFFFF">IsarFavorite</text>
+
+    <g font-size="13" fill="#0F172A">
+      <text x="80" y="760"><tspan font-weight="700" fill="#7C3AED">PK</tspan>  isarId : Id</text>
+      <text x="80" y="785"><tspan font-weight="700" fill="#F59E0B">FK</tspan><tspan font-weight="700" fill="#10B981">+UK</tspan> eventId : String</text>
+      <text x="80" y="810">     addedAt : DateTime</text>
+    </g>
+  </g>
+
+  <!-- ============================================= -->
+  <!-- RELATIONS -->
+  <!-- ============================================= -->
+
+  <!-- UserProfile → Ticket (1:N) -->
+  <g>
+    <path d="M 400 280 L 500 280 L 500 280 L 600 280" fill="none" stroke="#6366F1" stroke-width="1.8" marker-start="url(#one)" marker-end="url(#many)"/>
+    <text x="500" y="270" text-anchor="middle" font-size="12" font-weight="600" fill="#6366F1">possède</text>
+  </g>
+
+  <!-- UserProfile → CartItem (1:N) -->
+  <g>
+    <path d="M 400 450 L 500 450 L 500 690 L 600 690" fill="none" stroke="#6366F1" stroke-width="1.8" marker-start="url(#one)" marker-end="url(#many)"/>
+    <text x="510" y="575" text-anchor="start" font-size="12" font-weight="600" fill="#6366F1">remplit</text>
+  </g>
+
+  <!-- UserProfile → Favorite (1:N) -->
+  <g>
+    <path d="M 230 600 L 230 645 L 230 690" fill="none" stroke="#6366F1" stroke-width="1.8" marker-start="url(#one)" marker-end="url(#many)"/>
+    <text x="245" y="650" text-anchor="start" font-size="12" font-weight="600" fill="#6366F1">ajoute</text>
+  </g>
+
+  <!-- Event → Ticket (1:N) -->
+  <g>
+    <path d="M 1200 280 L 1100 280 L 1100 280 L 940 280" fill="none" stroke="#6366F1" stroke-width="1.8" marker-start="url(#one)" marker-end="url(#many)"/>
+    <text x="1070" y="270" text-anchor="middle" font-size="12" font-weight="600" fill="#6366F1">génère</text>
+  </g>
+
+  <!-- Event → CartItem (1:N) -->
+  <g>
+    <path d="M 1200 720 L 1120 720 L 1120 745 L 940 745" fill="none" stroke="#6366F1" stroke-width="1.8" marker-start="url(#one)" marker-end="url(#many)"/>
+    <text x="1060" y="710" text-anchor="middle" font-size="12" font-weight="600" fill="#6366F1">dans panier</text>
+  </g>
+
+  <!-- Event → Favorite (1:N) - routed around CartItem via bottom -->
+  <g>
+    <path d="M 1370 720 L 1370 870 L 400 870 L 400 780" fill="none" stroke="#6366F1" stroke-width="1.8" marker-start="url(#one)" marker-end="url(#many)"/>
+    <text x="1000" y="885" text-anchor="middle" font-size="12" font-weight="600" fill="#6366F1">est favori</text>
+  </g>
+
+  <!-- CartItem → Ticket (checkout) -->
+  <g>
+    <path d="M 770 560 L 770 490" fill="none" stroke="#10B981" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#many)"/>
+    <rect x="680" y="515" width="180" height="22" rx="11" fill="#DCFCE7" stroke="#10B981" stroke-width="1"/>
+    <text x="770" y="530" text-anchor="middle" font-size="11" font-weight="700" fill="#047857">→ checkout devient</text>
+  </g>
+
+  <!-- ============================================= -->
+  <!-- LEGEND -->
+  <!-- ============================================= -->
+  <g transform="translate(60, 1020)">
+    <rect x="0" y="0" width="1480" height="120" rx="12" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+    <text x="20" y="28" font-size="14" font-weight="700" fill="#0F172A">Légende</text>
+
+    <!-- Keys -->
+    <text x="20" y="55" font-size="13" fill="#0F172A"><tspan font-weight="700" fill="#7C3AED">PK</tspan> = Primary Key (Isar auto-increment)</text>
+    <text x="20" y="78" font-size="13" fill="#0F172A"><tspan font-weight="700" fill="#10B981">UK</tspan> = Unique Key (@Index unique, replace: true)</text>
+    <text x="20" y="101" font-size="13" fill="#0F172A"><tspan font-weight="700" fill="#F59E0B">FK</tspan> = Foreign Key (référence via eventId, pas de contrainte SQL — Isar est NoSQL)</text>
+
+    <!-- Cardinalité -->
+    <text x="450" y="55" font-size="13" fill="#0F172A" font-weight="700">Cardinalité :</text>
+    <line x1="450" y1="72" x2="500" y2="72" stroke="#6366F1" stroke-width="1.8" marker-start="url(#one)" marker-end="url(#many)"/>
+    <text x="510" y="76" font-size="12" fill="#0F172A">1:N (un à plusieurs)</text>
+
+    <line x1="450" y1="95" x2="500" y2="95" stroke="#10B981" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#many)"/>
+    <text x="510" y="99" font-size="12" fill="#0F172A">Transition après action (checkout)</text>
+
+    <!-- Collections -->
+    <text x="800" y="55" font-size="13" font-weight="700" fill="#0F172A">Collections :</text>
+    <rect x="800" y="66" width="14" height="14" rx="3" fill="#7C3AED"/>
+    <text x="820" y="78" font-size="12" fill="#0F172A">Profil utilisateur (1 seul)</text>
+    <rect x="800" y="86" width="14" height="14" rx="3" fill="#EC4899"/>
+    <text x="820" y="98" font-size="12" fill="#0F172A">Événements (catalogue)</text>
+
+    <rect x="1020" y="46" width="14" height="14" rx="3" fill="#10B981"/>
+    <text x="1040" y="58" font-size="12" fill="#0F172A">Billets achetés (QR codes)</text>
+    <rect x="1020" y="66" width="14" height="14" rx="3" fill="#F59E0B"/>
+    <text x="1040" y="78" font-size="12" fill="#0F172A">Panier (avant checkout)</text>
+    <rect x="1020" y="86" width="14" height="14" rx="3" fill="#EF4444"/>
+    <text x="1040" y="98" font-size="12" fill="#0F172A">Favoris (index utilisateur)</text>
+  </g>
+</svg>

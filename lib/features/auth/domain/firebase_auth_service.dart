@@ -1,22 +1,19 @@
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:isar/isar.dart';
-import '../../../core/database/isar_collections.dart';
+import 'package:drift/drift.dart';
+import '../../../core/database/app_database.dart';
 import '../../admin/domain/role.dart';
 import 'auth_service.dart';
 
 /// Firebase-backed AuthService that mirrors the local API.
-///
-/// Falls back transparently to the local AuthService for profile data
-/// (Firebase Auth only stores credentials; profile preferences stay local).
 class FirebaseAuthService {
   final FirebaseAuth _firebase;
-  final Isar _isar;
-  final AuthService _local; // used for local profile storage
+  final AppDatabase _db;
+  final AuthService _local;
 
-  FirebaseAuthService(this._isar)
+  FirebaseAuthService(this._db)
       : _firebase = FirebaseAuth.instance,
-        _local = AuthService(_isar);
+        _local = AuthService(_db);
 
   static const _sessionKey = 'session';
 
@@ -26,25 +23,34 @@ class FirebaseAuthService {
     final email = fbUser.email?.toLowerCase();
     if (email == null) return null;
 
-    // Make sure session is in sync
     await _setSession(email);
 
-    // Find or create the local profile mirror
-    var profile = await _isar.isarUserProfiles
-        .filter()
-        .emailEqualTo(email, caseSensitive: false)
-        .findFirst();
+    var profile = await (_db.select(_db.isarUserProfiles)
+          ..where((u) => u.email.equals(email)))
+        .getSingleOrNull();
     if (profile == null) {
-      profile = _buildProfileFromFirebase(fbUser);
-      await _isar.writeTxn(() async {
-        await _isar.isarUserProfiles.put(profile!);
-      });
+      final now = DateTime.now();
+      await _db.into(_db.isarUserProfiles).insert(
+            IsarUserProfilesCompanion.insert(
+              email: email,
+              name: fbUser.displayName ?? email.split('@').first,
+              memberSince: now.year,
+              createdAt: fbUser.metadata.creationTime ?? now,
+              lastLoginAt: Value(fbUser.metadata.lastSignInTime ?? now),
+              role: Value(kOwnerEmails.contains(email) ? 'owner' : 'user'),
+            ),
+          );
+      profile = await (_db.select(_db.isarUserProfiles)
+            ..where((u) => u.email.equals(email)))
+          .getSingle();
     }
     if (kOwnerEmails.contains(email) && profile.role != 'owner') {
-      profile.role = 'owner';
-      await _isar.writeTxn(() async {
-        await _isar.isarUserProfiles.put(profile!);
-      });
+      await (_db.update(_db.isarUserProfiles)
+            ..where((u) => u.email.equals(email)))
+          .write(const IsarUserProfilesCompanion(role: Value('owner')));
+      profile = await (_db.select(_db.isarUserProfiles)
+            ..where((u) => u.email.equals(email)))
+          .getSingle();
     }
     return profile;
   }
@@ -63,31 +69,18 @@ class FirebaseAuthService {
       await cred.user?.updateDisplayName(name.trim());
 
       final now = DateTime.now();
-      final profile = IsarUserProfile()
-        ..email = lowerEmail
-        ..name = name.trim()
-        ..passwordHash = '' // unused: Firebase manages credentials
-        ..memberSince = now.year
-        ..genres = []
-        ..budgetMax = 300
-        ..locationName = ''
-        ..language = 'fr'
-        ..darkMode = false
-        ..notificationsEnabled = true
-        ..ecoMode = true
-        ..isOnboarded = false
-        ..eventsBooked = 0
-        ..co2SavedKg = 0
-        ..moneySavedEur = 0
-        ..percentile = 50
-        ..createdAt = now
-        ..lastLoginAt = now
-        ..role = kOwnerEmails.contains(lowerEmail) ? 'owner' : 'user';
-
-      await _isar.writeTxn(() async {
-        await _isar.isarUserProfiles.put(profile);
-      });
+      await _db.into(_db.isarUserProfiles).insert(IsarUserProfilesCompanion.insert(
+            email: lowerEmail,
+            name: name.trim(),
+            memberSince: now.year,
+            createdAt: now,
+            lastLoginAt: Value(now),
+            role: Value(kOwnerEmails.contains(lowerEmail) ? 'owner' : 'user'),
+          ));
       await _setSession(lowerEmail);
+      final profile = await (_db.select(_db.isarUserProfiles)
+            ..where((u) => u.email.equals(lowerEmail)))
+          .getSingle();
       return AuthSuccess(profile);
     } on FirebaseAuthException catch (e) {
       return AuthFailure(_friendly(e));
@@ -117,11 +110,13 @@ class FirebaseAuthService {
           'Compte suspendu. ${profile.suspendedReason ?? "Contacte le support."}',
         );
       }
-      profile.lastLoginAt = DateTime.now();
-      await _isar.writeTxn(() async {
-        await _isar.isarUserProfiles.put(profile);
-      });
-      return AuthSuccess(profile);
+      await (_db.update(_db.isarUserProfiles)
+            ..where((u) => u.email.equals(lowerEmail)))
+          .write(IsarUserProfilesCompanion(lastLoginAt: Value(DateTime.now())));
+      final fresh = await (_db.select(_db.isarUserProfiles)
+            ..where((u) => u.email.equals(lowerEmail)))
+          .getSingle();
+      return AuthSuccess(fresh);
     } on FirebaseAuthException catch (e) {
       return AuthFailure(_friendly(e));
     } catch (e, st) {
@@ -135,7 +130,6 @@ class FirebaseAuthService {
     await _setSession(null);
   }
 
-  /// null on success, error message otherwise.
   Future<String?> sendPasswordResetEmail(String email) async {
     try {
       await _firebase.sendPasswordResetEmail(
@@ -167,7 +161,6 @@ class FirebaseAuthService {
     double? moneySavedDelta,
     int? percentile,
   }) async {
-    // Update Firebase displayName when the local name changes.
     if (name != null) {
       try {
         await _firebase.currentUser?.updateDisplayName(name);
@@ -211,45 +204,28 @@ class FirebaseAuthService {
   // ── Internals ──
 
   Future<void> _setSession(String? email) async {
-    final existing = await _isar.isarAuthSessions
-        .filter()
-        .keyEqualTo(_sessionKey)
-        .findFirst();
-    final session = existing ?? (IsarAuthSession()..key = _sessionKey);
-    session.activeEmail = email;
-    session.loggedInAt = email != null ? DateTime.now() : null;
-    await _isar.writeTxn(() async {
-      await _isar.isarAuthSessions.put(session);
-    });
-  }
-
-  IsarUserProfile _buildProfileFromFirebase(User u) {
-    final now = DateTime.now();
-    final email = u.email!.toLowerCase();
-    return IsarUserProfile()
-      ..email = email
-      ..name = u.displayName ?? email.split('@').first
-      ..passwordHash = ''
-      ..memberSince = now.year
-      ..genres = []
-      ..budgetMax = 300
-      ..locationName = ''
-      ..language = 'fr'
-      ..darkMode = false
-      ..notificationsEnabled = true
-      ..ecoMode = true
-      ..isOnboarded = false
-      ..eventsBooked = 0
-      ..co2SavedKg = 0
-      ..moneySavedEur = 0
-      ..percentile = 50
-      ..createdAt = u.metadata.creationTime ?? now
-      ..lastLoginAt = u.metadata.lastSignInTime ?? now
-      ..role = kOwnerEmails.contains(email) ? 'owner' : 'user';
+    final existing = await (_db.select(_db.isarAuthSessions)
+          ..where((s) => s.key.equals(_sessionKey)))
+        .getSingleOrNull();
+    if (existing != null) {
+      await (_db.update(_db.isarAuthSessions)
+            ..where((s) => s.isarId.equals(existing.isarId)))
+          .write(IsarAuthSessionsCompanion(
+        activeEmail: Value(email),
+        loggedInAt: Value(email != null ? DateTime.now() : null),
+      ));
+    } else {
+      await _db.into(_db.isarAuthSessions).insert(
+            IsarAuthSessionsCompanion.insert(
+              key: _sessionKey,
+              activeEmail: Value(email),
+              loggedInAt: Value(email != null ? DateTime.now() : null),
+            ),
+          );
+    }
   }
 
   String _friendly(FirebaseAuthException e) {
-    // Always log full details — helps diagnose Windows-specific issues.
     debugPrint('🔥 FirebaseAuth error [${e.code}]: ${e.message}');
     switch (e.code) {
       case 'invalid-email':
@@ -268,12 +244,7 @@ class FirebaseAuthService {
       case 'network-request-failed':
         return 'Pas de connexion réseau.';
       case 'operation-not-allowed':
-        return 'Email/Password non activé dans Firebase Console. '
-            'Va dans Authentication → Sign-in method → active Email/Password.';
-      case 'internal-error':
-      case 'internal-error-encountered':
-        return 'Erreur Firebase : vérifie que Email/Password est activé dans '
-            'Authentication → Sign-in method (Console Firebase).';
+        return 'Email/Password non activé dans Firebase Console.';
       default:
         return 'Erreur [${e.code}] : ${e.message ?? "inconnue"}';
     }

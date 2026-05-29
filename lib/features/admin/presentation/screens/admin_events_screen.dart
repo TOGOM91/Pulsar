@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
-import '../../../../core/database/isar_collections.dart';
+import '../../../../core/database/app_database.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../events/presentation/providers/event_providers.dart';
@@ -26,7 +26,7 @@ class AdminEventsScreen extends ConsumerWidget {
         ),
         title: Row(
           children: [
-            const Text('🎟️', style: TextStyle(fontSize: 22)),
+            const Text('🎟�?', style: TextStyle(fontSize: 22)),
             const SizedBox(width: 8),
             Text('ÉVÉNEMENTS',
                 style: PulsarTheme.display(26,
@@ -245,7 +245,7 @@ class _EventAdminCard extends StatelessWidget {
                             borderRadius: BorderRadius.circular(50),
                           ),
                           child: Text(
-                            '🎟️ ${event.totalTicketsSold}',
+                            '🎟�? ${event.totalTicketsSold}',
                             style: const TextStyle(
                               color: PulsarColors.ecoGreen,
                               fontWeight: FontWeight.w800,

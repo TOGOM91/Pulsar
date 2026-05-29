@@ -1,5 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/database/isar_collections.dart';
+import '../../../../core/database/app_database.dart';
 import '../../../../core/providers/core_providers.dart';
 import '../../domain/auth_service.dart';
 import '../../domain/firebase_auth_service.dart';
@@ -34,13 +34,13 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 
   @override
   Future<AuthState> build() async {
-    final isar = await ref.watch(isarProvider.future);
+    final db = ref.watch(appDatabaseProvider);
     final firebaseReady = ref.watch(firebaseReadyProvider);
 
-    _local = AuthService(isar);
+    _local = AuthService(db);
     if (firebaseReady) {
       try {
-        _firebase = FirebaseAuthService(isar);
+        _firebase = FirebaseAuthService(db);
         _useFirebase = true;
       } catch (_) {
         _useFirebase = false;

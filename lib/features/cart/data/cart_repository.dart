@@ -1,50 +1,63 @@
-import 'package:isar/isar.dart';
-import '../../../core/database/isar_collections.dart';
+import 'package:drift/drift.dart';
+import '../../../core/database/app_database.dart';
 import '../domain/cart_model.dart';
 
-/// Repository for the shopping cart. Persisted in Isar for offline support.
-/// Cart items are scoped per user via `ownerEmail`.
+/// Shopping cart repository. Cart items are scoped per user via `ownerEmail`.
 class CartRepository {
-  final Isar _isar;
+  final AppDatabase _db;
 
-  CartRepository(this._isar);
+  CartRepository(this._db);
 
   Future<String?> _currentUserEmail() async {
-    final session = await _isar.isarAuthSessions
-        .filter()
-        .keyEqualTo('session')
-        .findFirst();
-    return session?.activeEmail;
+    final row = await (_db.select(_db.isarAuthSessions)
+          ..where((s) => s.key.equals('session')))
+        .getSingleOrNull();
+    return row?.activeEmail;
   }
 
   Future<List<CartItem>> getCartItems() async {
     final email = await _currentUserEmail();
     if (email == null) return [];
-    final results = await _isar.isarCartItems
-        .filter()
-        .ownerEmailEqualTo(email, caseSensitive: false)
-        .findAll();
-    return results.map(_toModel).toList();
+    final rows = await (_db.select(_db.isarCartItems)
+          ..where((c) => c.ownerEmail.equals(email)))
+        .get();
+    return rows.map(_toModel).toList();
   }
 
   Future<void> addItem(CartItem item) async {
     final email = await _currentUserEmail();
     if (email == null) return;
-    final existing = await _isar.isarCartItems
-        .filter()
-        .ownerEmailEqualTo(email, caseSensitive: false)
-        .and()
-        .eventIdEqualTo(item.eventId)
-        .findFirst();
 
-    await _isar.writeTxn(() async {
-      if (existing != null) {
-        existing.quantity = existing.quantity + item.quantity;
-        await _isar.isarCartItems.put(existing);
-      } else {
-        await _isar.isarCartItems.put(_toIsar(item, email));
-      }
-    });
+    final existing = await (_db.select(_db.isarCartItems)
+          ..where(
+              (c) => c.ownerEmail.equals(email) & c.eventId.equals(item.eventId)))
+        .getSingleOrNull();
+
+    if (existing != null) {
+      await (_db.update(_db.isarCartItems)
+            ..where((c) => c.isarId.equals(existing.isarId)))
+          .write(IsarCartItemsCompanion(
+        quantity: Value(existing.quantity + item.quantity),
+      ));
+    } else {
+      await _db.into(_db.isarCartItems).insert(
+            IsarCartItemsCompanion.insert(
+              ownerEmail: email,
+              eventId: item.eventId,
+              eventName: item.eventName,
+              eventDate: item.eventDate,
+              eventLocation: item.eventLocation,
+              eventImageUrl: Value(item.eventImageUrl),
+              unitPrice: item.unitPrice,
+              quantity: item.quantity,
+              ticketType: item.ticketType,
+              transportOption: Value(item.transportOption),
+              transportPrice: Value(item.transportPrice),
+              accommodationOption: Value(item.accommodationOption),
+              accommodationPrice: Value(item.accommodationPrice),
+            ),
+          );
+    }
   }
 
   Future<void> updateQuantity(String eventId, int quantity) async {
@@ -54,59 +67,37 @@ class CartRepository {
     }
     final email = await _currentUserEmail();
     if (email == null) return;
-    final existing = await _isar.isarCartItems
-        .filter()
-        .ownerEmailEqualTo(email, caseSensitive: false)
-        .and()
-        .eventIdEqualTo(eventId)
-        .findFirst();
-    if (existing == null) return;
-    existing.quantity = quantity;
-    await _isar.writeTxn(() async {
-      await _isar.isarCartItems.put(existing);
-    });
+    await (_db.update(_db.isarCartItems)
+          ..where(
+              (c) => c.ownerEmail.equals(email) & c.eventId.equals(eventId)))
+        .write(IsarCartItemsCompanion(quantity: Value(quantity)));
   }
 
   Future<void> removeItem(String eventId) async {
     final email = await _currentUserEmail();
     if (email == null) return;
-    final existing = await _isar.isarCartItems
-        .filter()
-        .ownerEmailEqualTo(email, caseSensitive: false)
-        .and()
-        .eventIdEqualTo(eventId)
-        .findFirst();
-    if (existing == null) return;
-
-    await _isar.writeTxn(() async {
-      await _isar.isarCartItems.delete(existing.isarId);
-    });
+    await (_db.delete(_db.isarCartItems)
+          ..where(
+              (c) => c.ownerEmail.equals(email) & c.eventId.equals(eventId)))
+        .go();
   }
 
   Future<void> clearCart() async {
     final email = await _currentUserEmail();
     if (email == null) return;
-    await _isar.writeTxn(() async {
-      final items = await _isar.isarCartItems
-          .filter()
-          .ownerEmailEqualTo(email, caseSensitive: false)
-          .findAll();
-      for (final i in items) {
-        await _isar.isarCartItems.delete(i.isarId);
-      }
-    });
+    await (_db.delete(_db.isarCartItems)
+          ..where((c) => c.ownerEmail.equals(email)))
+        .go();
   }
 
   Future<int> get itemCount async {
     final email = await _currentUserEmail();
     if (email == null) return 0;
-    return _isar.isarCartItems
-        .filter()
-        .ownerEmailEqualTo(email, caseSensitive: false)
-        .count();
+    final rows = await (_db.select(_db.isarCartItems)
+          ..where((c) => c.ownerEmail.equals(email)))
+        .get();
+    return rows.length;
   }
-
-  // ── Mappers ──
 
   CartItem _toModel(IsarCartItem e) => CartItem(
         eventId: e.eventId,
@@ -122,19 +113,4 @@ class CartRepository {
         accommodationOption: e.accommodationOption,
         accommodationPrice: e.accommodationPrice,
       );
-
-  IsarCartItem _toIsar(CartItem m, String ownerEmail) => IsarCartItem()
-    ..ownerEmail = ownerEmail
-    ..eventId = m.eventId
-    ..eventName = m.eventName
-    ..eventDate = m.eventDate
-    ..eventLocation = m.eventLocation
-    ..eventImageUrl = m.eventImageUrl
-    ..unitPrice = m.unitPrice
-    ..quantity = m.quantity
-    ..ticketType = m.ticketType
-    ..transportOption = m.transportOption
-    ..transportPrice = m.transportPrice
-    ..accommodationOption = m.accommodationOption
-    ..accommodationPrice = m.accommodationPrice;
 }

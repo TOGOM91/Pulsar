@@ -1,5 +1,5 @@
 import 'dart:math';
-import '../../../core/database/isar_collections.dart';
+import '../../../core/database/app_database.dart';
 
 /// Result of a payment attempt.
 class PaymentResult {
@@ -54,13 +54,6 @@ class PaymentService {
       return PaymentResult.success(txId);
     }
 
-    // Real Stripe call goes here.
-    // 1. Server-side : POST /create-payment-intent { amount, currency }
-    //    using the Stripe secret key. Returns clientSecret.
-    // 2. Client : Stripe.instance.confirmPayment(paymentIntentClientSecret).
-    // 3. Mark order as paid when Stripe webhook confirms.
-    //
-    // Stub : refuse cleanly when no live key configured.
     if (_settings.stripePublishableKey == null ||
         _settings.stripePublishableKey!.isEmpty) {
       return const PaymentResult.failure(

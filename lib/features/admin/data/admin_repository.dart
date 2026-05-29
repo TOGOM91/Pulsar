@@ -1,36 +1,30 @@
 import 'dart:convert';
-import 'package:isar/isar.dart';
+import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
-import '../../../core/database/isar_collections.dart';
+import '../../../core/database/app_database.dart';
 import '../domain/role.dart';
 
 /// Single entry point for all admin operations. Writes are audit-logged.
-///
-/// Layered intentionally on top of Isar : same offline-first model the rest
-/// of the app uses, easy to later mirror to Firestore.
 class AdminRepository {
-  final Isar _isar;
+  final AppDatabase _db;
   static const _uuid = Uuid();
   static const _settingsKey = 'app';
 
-  AdminRepository(this._isar);
+  AdminRepository(this._db);
 
-  // ────────────────────────────────────────────────────────────
-  // Dashboard / stats
-  // ────────────────────────────────────────────────────────────
+  // ── Stats ──
 
   Future<DashboardStats> computeStats() async {
-    final users = await _isar.isarUserProfiles.where().findAll();
-    final events = await _isar.isarEvents.where().findAll();
-    final orders = await _isar.isarOrders.where().findAll();
-    final tickets = await _isar.isarTickets.where().findAll();
+    final users = await _db.select(_db.isarUserProfiles).get();
+    final events = await _db.select(_db.isarEvents).get();
+    final orders = await _db.select(_db.isarOrders).get();
+    final tickets = await _db.select(_db.isarTickets).get();
 
     final paid = orders.where((o) => o.status == 'paid').toList();
     final refunded = orders.where((o) => o.status == 'refunded').toList();
     final revenue = paid.fold<double>(0, (s, o) => s + o.total);
     final refundedAmount =
         refunded.fold<double>(0, (s, o) => s + (o.refundAmount ?? o.total));
-
     final co2 = users.fold<double>(0, (s, u) => s + u.co2SavedKg);
 
     final byRole = <UserRole, int>{
@@ -59,59 +53,64 @@ class AdminRepository {
     );
   }
 
-  // ────────────────────────────────────────────────────────────
-  // Events CRUD
-  // ────────────────────────────────────────────────────────────
+  // ── Events ──
 
   Future<List<IsarEvent>> listEvents() {
-    return _isar.isarEvents.where().sortBySortOrder().findAll();
+    return (_db.select(_db.isarEvents)
+          ..orderBy([(e) => OrderingTerm(expression: e.sortOrder)]))
+        .get();
   }
 
   Future<IsarEvent?> findEvent(String eventId) {
-    return _isar.isarEvents.filter().eventIdEqualTo(eventId).findFirst();
+    return (_db.select(_db.isarEvents)
+          ..where((e) => e.eventId.equals(eventId)))
+        .getSingleOrNull();
   }
 
   Future<IsarEvent> createEvent({
     required IsarUserProfile actor,
     required AdminEventInput input,
   }) async {
-    final event = IsarEvent()
-      ..eventId = input.eventId.isEmpty
-          ? 'evt-${_uuid.v4().substring(0, 8)}'
-          : input.eventId
-      ..name = input.name
-      ..category = input.category
-      ..duration = input.duration
-      ..imageUrl = input.imageUrl
-      ..gradient = input.gradient.isEmpty
-          ? 'linear-gradient(135deg, #7C3AED 0%, #06B6D4 100%)'
-          : input.gradient
-      ..date = input.date
-      ..location = input.location
-      ..transport = input.transport
-      ..accommodation = input.accommodation
-      ..pricingLabel = input.pricingLabel
-      ..pricingAmount = input.pricingAmount
-      ..pricingSavings = input.pricingSavings
-      ..pricingSavingsText = input.pricingSavingsText
-      ..currency = input.currency.isEmpty ? '€' : input.currency
-      ..genres = input.genres
-      ..badgeTypes = input.badgeTypes
-      ..badgeTexts = input.badgeTexts
-      ..isFavorite = false
-      ..section = input.section.isEmpty ? 'upcoming' : input.section
-      ..sortOrder = input.sortOrder
-      ..isPublished = input.isPublished
-      ..createdAt = DateTime.now()
-      ..updatedAt = DateTime.now()
-      ..updatedByEmail = actor.email;
+    final id = input.eventId.isEmpty
+        ? 'evt-${_uuid.v4().substring(0, 8)}'
+        : input.eventId;
+    final gradient = input.gradient.isEmpty
+        ? 'linear-gradient(135deg, #7C3AED 0%, #06B6D4 100%)'
+        : input.gradient;
+    final section = input.section.isEmpty ? 'upcoming' : input.section;
+    final currency = input.currency.isEmpty ? '€' : input.currency;
+    final now = DateTime.now();
 
-    await _isar.writeTxn(() async {
-      await _isar.isarEvents.put(event);
-    });
-    await _audit(actor, 'event.create', 'event', event.eventId,
-        {'name': event.name});
-    return event;
+    await _db.into(_db.isarEvents).insert(IsarEventsCompanion.insert(
+          eventId: id,
+          name: input.name,
+          category: input.category,
+          duration: input.duration,
+          imageUrl: input.imageUrl,
+          gradient: gradient,
+          date: input.date,
+          location: input.location,
+          transport: input.transport,
+          accommodation: Value(input.accommodation),
+          pricingLabel: input.pricingLabel,
+          pricingAmount: input.pricingAmount,
+          pricingSavings: Value(input.pricingSavings),
+          pricingSavingsText: Value(input.pricingSavingsText),
+          currency: Value(currency),
+          genres: Value(input.genres),
+          badgeTypes: Value(input.badgeTypes),
+          badgeTexts: Value(input.badgeTexts),
+          section: section,
+          sortOrder: Value(input.sortOrder),
+          isPublished: Value(input.isPublished),
+          createdAt: Value(now),
+          updatedAt: Value(now),
+          updatedByEmail: Value(actor.email),
+        ));
+
+    final event = await findEvent(id);
+    await _audit(actor, 'event.create', 'event', id, {'name': input.name});
+    return event!;
   }
 
   Future<IsarEvent?> updateEvent({
@@ -122,36 +121,39 @@ class AdminRepository {
     final event = await findEvent(eventId);
     if (event == null) return null;
 
-    event
-      ..name = input.name
-      ..category = input.category
-      ..duration = input.duration
-      ..imageUrl = input.imageUrl
-      ..gradient = input.gradient.isEmpty ? event.gradient : input.gradient
-      ..date = input.date
-      ..location = input.location
-      ..transport = input.transport
-      ..accommodation = input.accommodation
-      ..pricingLabel = input.pricingLabel
-      ..pricingAmount = input.pricingAmount
-      ..pricingSavings = input.pricingSavings
-      ..pricingSavingsText = input.pricingSavingsText
-      ..currency = input.currency.isEmpty ? event.currency : input.currency
-      ..genres = input.genres
-      ..badgeTypes = input.badgeTypes
-      ..badgeTexts = input.badgeTexts
-      ..section = input.section.isEmpty ? event.section : input.section
-      ..sortOrder = input.sortOrder
-      ..isPublished = input.isPublished
-      ..updatedAt = DateTime.now()
-      ..updatedByEmail = actor.email;
+    await (_db.update(_db.isarEvents)
+          ..where((e) => e.eventId.equals(eventId)))
+        .write(IsarEventsCompanion(
+      name: Value(input.name),
+      category: Value(input.category),
+      duration: Value(input.duration),
+      imageUrl: Value(input.imageUrl),
+      gradient: input.gradient.isEmpty
+          ? const Value.absent()
+          : Value(input.gradient),
+      date: Value(input.date),
+      location: Value(input.location),
+      transport: Value(input.transport),
+      accommodation: Value(input.accommodation),
+      pricingLabel: Value(input.pricingLabel),
+      pricingAmount: Value(input.pricingAmount),
+      pricingSavings: Value(input.pricingSavings),
+      pricingSavingsText: Value(input.pricingSavingsText),
+      currency:
+          input.currency.isEmpty ? const Value.absent() : Value(input.currency),
+      genres: Value(input.genres),
+      badgeTypes: Value(input.badgeTypes),
+      badgeTexts: Value(input.badgeTexts),
+      section:
+          input.section.isEmpty ? const Value.absent() : Value(input.section),
+      sortOrder: Value(input.sortOrder),
+      isPublished: Value(input.isPublished),
+      updatedAt: Value(DateTime.now()),
+      updatedByEmail: Value(actor.email),
+    ));
 
-    await _isar.writeTxn(() async {
-      await _isar.isarEvents.put(event);
-    });
-    await _audit(actor, 'event.update', 'event', eventId,
-        {'name': event.name});
-    return event;
+    await _audit(actor, 'event.update', 'event', eventId, {'name': input.name});
+    return findEvent(eventId);
   }
 
   Future<void> deleteEvent({
@@ -160,11 +162,10 @@ class AdminRepository {
   }) async {
     final event = await findEvent(eventId);
     if (event == null) return;
-    await _isar.writeTxn(() async {
-      await _isar.isarEvents.delete(event.isarId);
-    });
-    await _audit(actor, 'event.delete', 'event', eventId,
-        {'name': event.name});
+    await (_db.delete(_db.isarEvents)
+          ..where((e) => e.eventId.equals(eventId)))
+        .go();
+    await _audit(actor, 'event.delete', 'event', eventId, {'name': event.name});
   }
 
   Future<void> toggleEventPublished({
@@ -173,40 +174,37 @@ class AdminRepository {
   }) async {
     final event = await findEvent(eventId);
     if (event == null) return;
-    event
-      ..isPublished = !event.isPublished
-      ..updatedAt = DateTime.now()
-      ..updatedByEmail = actor.email;
-    await _isar.writeTxn(() async {
-      await _isar.isarEvents.put(event);
-    });
+    final newPublished = !event.isPublished;
+    await (_db.update(_db.isarEvents)
+          ..where((e) => e.eventId.equals(eventId)))
+        .write(IsarEventsCompanion(
+      isPublished: Value(newPublished),
+      updatedAt: Value(DateTime.now()),
+      updatedByEmail: Value(actor.email),
+    ));
     await _audit(
       actor,
-      event.isPublished ? 'event.publish' : 'event.unpublish',
+      newPublished ? 'event.publish' : 'event.unpublish',
       'event',
       eventId,
       {'name': event.name},
     );
   }
 
-  // ────────────────────────────────────────────────────────────
-  // Users management
-  // ────────────────────────────────────────────────────────────
+  // ── Users ──
 
   Future<List<IsarUserProfile>> listUsers() async {
-    final users = await _isar.isarUserProfiles.where().findAll();
-    users.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return users;
+    return (_db.select(_db.isarUserProfiles)
+          ..orderBy([(u) => OrderingTerm.desc(u.createdAt)]))
+        .get();
   }
 
   Future<IsarUserProfile?> findUser(String email) {
-    return _isar.isarUserProfiles
-        .filter()
-        .emailEqualTo(email.toLowerCase().trim(), caseSensitive: false)
-        .findFirst();
+    return (_db.select(_db.isarUserProfiles)
+          ..where((u) => u.email.equals(email.toLowerCase().trim())))
+        .getSingleOrNull();
   }
 
-  /// Change a user's role. Only owners can call this.
   Future<IsarUserProfile?> changeRole({
     required IsarUserProfile actor,
     required String targetEmail,
@@ -215,21 +213,19 @@ class AdminRepository {
     final target = await findUser(targetEmail);
     if (target == null) return null;
     if (target.email == actor.email && newRole != UserRole.owner) {
-      // Refuse self-demotion to avoid losing the last owner.
-      final owners = await _isar.isarUserProfiles
-          .filter()
-          .roleEqualTo('owner')
-          .findAll();
+      // Refuse self-demotion if last owner.
+      final owners = await (_db.select(_db.isarUserProfiles)
+            ..where((u) => u.role.equals('owner')))
+          .get();
       if (owners.length <= 1) return target;
     }
     final previous = target.role;
-    target.role = newRole.wire;
-    await _isar.writeTxn(() async {
-      await _isar.isarUserProfiles.put(target);
-    });
+    await (_db.update(_db.isarUserProfiles)
+          ..where((u) => u.email.equals(target.email)))
+        .write(IsarUserProfilesCompanion(role: Value(newRole.wire)));
     await _audit(actor, 'user.role.change', 'user', target.email,
         {'from': previous, 'to': newRole.wire});
-    return target;
+    return findUser(target.email);
   }
 
   Future<IsarUserProfile?> suspendUser({
@@ -239,16 +235,16 @@ class AdminRepository {
   }) async {
     final target = await findUser(targetEmail);
     if (target == null) return null;
-    target
-      ..isSuspended = true
-      ..suspendedReason = reason
-      ..suspendedAt = DateTime.now();
-    await _isar.writeTxn(() async {
-      await _isar.isarUserProfiles.put(target);
-    });
-    await _audit(actor, 'user.suspend', 'user', target.email,
-        {'reason': reason});
-    return target;
+    await (_db.update(_db.isarUserProfiles)
+          ..where((u) => u.email.equals(target.email)))
+        .write(IsarUserProfilesCompanion(
+      isSuspended: const Value(true),
+      suspendedReason: Value(reason),
+      suspendedAt: Value(DateTime.now()),
+    ));
+    await _audit(
+        actor, 'user.suspend', 'user', target.email, {'reason': reason});
+    return findUser(target.email);
   }
 
   Future<IsarUserProfile?> reinstateUser({
@@ -257,32 +253,32 @@ class AdminRepository {
   }) async {
     final target = await findUser(targetEmail);
     if (target == null) return null;
-    target
-      ..isSuspended = false
-      ..suspendedReason = null
-      ..suspendedAt = null;
-    await _isar.writeTxn(() async {
-      await _isar.isarUserProfiles.put(target);
-    });
+    await (_db.update(_db.isarUserProfiles)
+          ..where((u) => u.email.equals(target.email)))
+        .write(const IsarUserProfilesCompanion(
+      isSuspended: Value(false),
+      suspendedReason: Value(null),
+      suspendedAt: Value(null),
+    ));
     await _audit(actor, 'user.reinstate', 'user', target.email, null);
-    return target;
+    return findUser(target.email);
   }
 
-  // ────────────────────────────────────────────────────────────
-  // Orders
-  // ────────────────────────────────────────────────────────────
+  // ── Orders ──
 
   Future<List<IsarOrder>> listOrders({String? statusFilter}) async {
-    final all = await _isar.isarOrders.where().findAll();
-    final filtered = statusFilter == null
-        ? all
-        : all.where((o) => o.status == statusFilter).toList();
-    filtered.sort((a, b) => b.placedAt.compareTo(a.placedAt));
-    return filtered;
+    final q = _db.select(_db.isarOrders);
+    if (statusFilter != null) {
+      q.where((o) => o.status.equals(statusFilter));
+    }
+    q.orderBy([(o) => OrderingTerm.desc(o.placedAt)]);
+    return q.get();
   }
 
   Future<IsarOrder?> findOrder(String orderId) {
-    return _isar.isarOrders.filter().orderIdEqualTo(orderId).findFirst();
+    return (_db.select(_db.isarOrders)
+          ..where((o) => o.orderId.equals(orderId)))
+        .getSingleOrNull();
   }
 
   Future<IsarOrder?> refundOrder({
@@ -296,84 +292,98 @@ class AdminRepository {
     if (order.status != 'paid') return order;
 
     final amount = partialAmount ?? order.total;
-    order
-      ..status = (partialAmount != null && partialAmount < order.total)
-          ? 'partial_refund'
-          : 'refunded'
-      ..refundedAt = DateTime.now()
-      ..refundReason = reason
-      ..refundAmount = amount
-      ..refundedByEmail = actor.email;
+    final newStatus = (partialAmount != null && partialAmount < order.total)
+        ? 'partial_refund'
+        : 'refunded';
 
-    // Cancel related tickets
+    await (_db.update(_db.isarOrders)
+          ..where((o) => o.orderId.equals(orderId)))
+        .write(IsarOrdersCompanion(
+      status: Value(newStatus),
+      refundedAt: Value(DateTime.now()),
+      refundReason: Value(reason),
+      refundAmount: Value(amount),
+      refundedByEmail: Value(actor.email),
+    ));
+
     for (final ticketId in order.ticketIds) {
-      final ticket = await _isar.isarTickets
-          .filter()
-          .ticketIdEqualTo(ticketId)
-          .findFirst();
-      if (ticket != null && ticket.status == 'active') {
-        ticket
-          ..status = 'cancelled'
-          ..cancelledAt = DateTime.now()
-          ..refundAmount = amount / order.ticketIds.length;
-        await _isar.writeTxn(() async {
-          await _isar.isarTickets.put(ticket);
-        });
+      final ticket = await (_db.select(_db.isarTickets)
+            ..where((t) => t.ticketId.equals(ticketId)))
+          .getSingleOrNull();
+      if (ticket != null && ticket.status == 'confirmed') {
+        await (_db.update(_db.isarTickets)
+              ..where((t) => t.isarId.equals(ticket.isarId)))
+            .write(IsarTicketsCompanion(
+          status: const Value('cancelled'),
+          cancelledAt: Value(DateTime.now()),
+          refundAmount: Value(amount / order.ticketIds.length),
+        ));
       }
     }
 
-    await _isar.writeTxn(() async {
-      await _isar.isarOrders.put(order);
-    });
     await _audit(actor, 'order.refund', 'order', orderId,
         {'amount': amount, 'reason': reason});
-    return order;
+    return findOrder(orderId);
   }
 
-  // ────────────────────────────────────────────────────────────
-  // Promo codes
-  // ────────────────────────────────────────────────────────────
+  // ── Promos ──
 
   Future<List<IsarPromoCode>> listPromos() async {
-    final all = await _isar.isarPromoCodes.where().findAll();
-    all.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return all;
+    return (_db.select(_db.isarPromoCodes)
+          ..orderBy([(p) => OrderingTerm.desc(p.createdAt)]))
+        .get();
   }
 
   Future<IsarPromoCode?> findPromo(String code) {
-    return _isar.isarPromoCodes
-        .filter()
-        .codeEqualTo(code.toUpperCase(), caseSensitive: false)
-        .findFirst();
+    return (_db.select(_db.isarPromoCodes)
+          ..where((p) => p.code.equals(code.toUpperCase())))
+        .getSingleOrNull();
   }
 
   Future<IsarPromoCode> savePromo({
     required IsarUserProfile actor,
-    required IsarPromoCode promo,
+    required PromoInput input,
   }) async {
-    promo
-      ..code = promo.code.toUpperCase().trim()
-      ..createdByEmail = promo.createdByEmail ?? actor.email
-      ..createdAt = promo.isarId == Isar.autoIncrement
-          ? DateTime.now()
-          : promo.createdAt;
-    await _isar.writeTxn(() async {
-      await _isar.isarPromoCodes.put(promo);
-    });
-    await _audit(actor, 'promo.save', 'promo', promo.code,
-        {'discountValue': promo.discountValue});
-    return promo;
+    final code = input.code.toUpperCase().trim();
+    final existing = await findPromo(code);
+    if (existing != null) {
+      await (_db.update(_db.isarPromoCodes)
+            ..where((p) => p.code.equals(code)))
+          .write(IsarPromoCodesCompanion(
+        label: Value(input.label),
+        emoji: Value(input.emoji),
+        discountType: Value(input.discountType),
+        discountValue: Value(input.discountValue),
+        minSubtotal: Value(input.minSubtotal),
+        maxUses: Value(input.maxUses),
+      ));
+      await _audit(actor, 'promo.save', 'promo', code,
+          {'discountValue': input.discountValue});
+      return (await findPromo(code))!;
+    }
+    await _db.into(_db.isarPromoCodes).insert(IsarPromoCodesCompanion.insert(
+          code: code,
+          label: input.label,
+          emoji: input.emoji,
+          discountType: input.discountType,
+          discountValue: input.discountValue,
+          minSubtotal: input.minSubtotal,
+          maxUses: input.maxUses,
+          createdAt: DateTime.now(),
+          createdByEmail: Value(actor.email),
+        ));
+    await _audit(actor, 'promo.save', 'promo', code,
+        {'discountValue': input.discountValue});
+    return (await findPromo(code))!;
   }
 
   Future<void> deletePromo({
     required IsarUserProfile actor,
     required String code,
   }) async {
-    final p = await findPromo(code);
-    if (p == null) return;
-    await _isar.writeTxn(() async {
-      await _isar.isarPromoCodes.delete(p.isarId);
-    });
+    await (_db.delete(_db.isarPromoCodes)
+          ..where((p) => p.code.equals(code.toUpperCase())))
+        .go();
     await _audit(actor, 'promo.delete', 'promo', code, null);
   }
 
@@ -383,42 +393,39 @@ class AdminRepository {
   }) async {
     final p = await findPromo(code);
     if (p == null) return null;
-    p.isActive = !p.isActive;
-    await _isar.writeTxn(() async {
-      await _isar.isarPromoCodes.put(p);
-    });
-    await _audit(actor, p.isActive ? 'promo.enable' : 'promo.disable',
-        'promo', code, null);
-    return p;
+    final next = !p.isActive;
+    await (_db.update(_db.isarPromoCodes)
+          ..where((x) => x.code.equals(code.toUpperCase())))
+        .write(IsarPromoCodesCompanion(isActive: Value(next)));
+    await _audit(actor, next ? 'promo.enable' : 'promo.disable', 'promo', code,
+        null);
+    return findPromo(code);
   }
 
-  // ────────────────────────────────────────────────────────────
-  // App settings
-  // ────────────────────────────────────────────────────────────
+  // ── App settings ──
 
   Future<IsarAppSettings> getOrInitSettings() async {
-    final existing = await _isar.isarAppSettings
-        .filter()
-        .keyEqualTo(_settingsKey)
-        .findFirst();
+    final existing = await (_db.select(_db.isarAppSettingsTable)
+          ..where((s) => s.key.equals(_settingsKey)))
+        .getSingleOrNull();
     if (existing != null) return existing;
-    final defaults = IsarAppSettings()
-      ..key = _settingsKey
-      ..taxRate = 0.20
-      ..serviceFeeRate = 0.05
-      ..supportEmail = 'support@pulsar.app'
-      ..maintenanceMode = false
-      ..maintenanceMessage = ''
-      ..featuredEventIds = const []
-      ..maxTicketsPerOrder = 10
-      ..currencyCode = 'EUR'
-      ..currencySymbol = '€'
-      ..updatedAt = DateTime.now()
-      ..paymentSimulation = true;
-    await _isar.writeTxn(() async {
-      await _isar.isarAppSettings.put(defaults);
-    });
-    return defaults;
+    await _db
+        .into(_db.isarAppSettingsTable)
+        .insert(IsarAppSettingsTableCompanion.insert(
+          key: _settingsKey,
+          taxRate: 0.20,
+          serviceFeeRate: 0.05,
+          supportEmail: 'support@pulsar.app',
+          maintenanceMode: false,
+          maintenanceMessage: '',
+          maxTicketsPerOrder: 10,
+          currencyCode: 'EUR',
+          currencySymbol: '€',
+          updatedAt: DateTime.now(),
+        ));
+    return (await (_db.select(_db.isarAppSettingsTable)
+              ..where((s) => s.key.equals(_settingsKey)))
+            .getSingle());
   }
 
   Future<IsarAppSettings> updateSettings({
@@ -435,42 +442,47 @@ class AdminRepository {
     String? stripePublishableKey,
     bool? paymentSimulation,
   }) async {
-    final settings = await getOrInitSettings();
-    if (taxRate != null) settings.taxRate = taxRate;
-    if (serviceFeeRate != null) settings.serviceFeeRate = serviceFeeRate;
-    if (supportEmail != null) settings.supportEmail = supportEmail;
-    if (maintenanceMode != null) settings.maintenanceMode = maintenanceMode;
-    if (maintenanceMessage != null) {
-      settings.maintenanceMessage = maintenanceMessage;
-    }
-    if (featuredEventIds != null) {
-      settings.featuredEventIds = featuredEventIds;
-    }
-    if (maxTicketsPerOrder != null) {
-      settings.maxTicketsPerOrder = maxTicketsPerOrder;
-    }
-    if (currencyCode != null) settings.currencyCode = currencyCode;
-    if (currencySymbol != null) settings.currencySymbol = currencySymbol;
-    if (stripePublishableKey != null) {
-      settings.stripePublishableKey = stripePublishableKey;
-    }
-    if (paymentSimulation != null) {
-      settings.paymentSimulation = paymentSimulation;
-    }
-    settings
-      ..updatedAt = DateTime.now()
-      ..updatedByEmail = actor.email;
-
-    await _isar.writeTxn(() async {
-      await _isar.isarAppSettings.put(settings);
-    });
+    await getOrInitSettings();
+    await (_db.update(_db.isarAppSettingsTable)
+          ..where((s) => s.key.equals(_settingsKey)))
+        .write(IsarAppSettingsTableCompanion(
+      taxRate: taxRate != null ? Value(taxRate) : const Value.absent(),
+      serviceFeeRate: serviceFeeRate != null
+          ? Value(serviceFeeRate)
+          : const Value.absent(),
+      supportEmail:
+          supportEmail != null ? Value(supportEmail) : const Value.absent(),
+      maintenanceMode: maintenanceMode != null
+          ? Value(maintenanceMode)
+          : const Value.absent(),
+      maintenanceMessage: maintenanceMessage != null
+          ? Value(maintenanceMessage)
+          : const Value.absent(),
+      featuredEventIds: featuredEventIds != null
+          ? Value(featuredEventIds)
+          : const Value.absent(),
+      maxTicketsPerOrder: maxTicketsPerOrder != null
+          ? Value(maxTicketsPerOrder)
+          : const Value.absent(),
+      currencyCode:
+          currencyCode != null ? Value(currencyCode) : const Value.absent(),
+      currencySymbol: currencySymbol != null
+          ? Value(currencySymbol)
+          : const Value.absent(),
+      stripePublishableKey: stripePublishableKey != null
+          ? Value(stripePublishableKey)
+          : const Value.absent(),
+      paymentSimulation: paymentSimulation != null
+          ? Value(paymentSimulation)
+          : const Value.absent(),
+      updatedAt: Value(DateTime.now()),
+      updatedByEmail: Value(actor.email),
+    ));
     await _audit(actor, 'settings.update', 'settings', _settingsKey, null);
-    return settings;
+    return getOrInitSettings();
   }
 
-  // ────────────────────────────────────────────────────────────
-  // Broadcast notifications
-  // ────────────────────────────────────────────────────────────
+  // ── Broadcasts ──
 
   Future<IsarBroadcastNotification> sendBroadcast({
     required IsarUserProfile actor,
@@ -480,37 +492,39 @@ class AdminRepository {
     String audience = 'all',
     String? actionRoute,
   }) async {
-    final broadcast = IsarBroadcastNotification()
-      ..broadcastId = 'br-${_uuid.v4().substring(0, 8)}'
-      ..title = title
-      ..body = body
-      ..category = category
-      ..audience = audience
-      ..actionRoute = actionRoute
-      ..sentAt = DateTime.now()
-      ..sentByEmail = actor.email;
-    await _isar.writeTxn(() async {
-      await _isar.isarBroadcastNotifications.put(broadcast);
-    });
-    await _audit(actor, 'broadcast.send', 'broadcast', broadcast.broadcastId,
+    final id = 'br-${_uuid.v4().substring(0, 8)}';
+    await _db.into(_db.isarBroadcastNotifications).insert(
+          IsarBroadcastNotificationsCompanion.insert(
+            broadcastId: id,
+            title: title,
+            body: body,
+            category: category,
+            actionRoute: Value(actionRoute),
+            audience: audience,
+            sentAt: DateTime.now(),
+            sentByEmail: actor.email,
+          ),
+        );
+    await _audit(actor, 'broadcast.send', 'broadcast', id,
         {'title': title, 'audience': audience});
-    return broadcast;
+    return (_db.select(_db.isarBroadcastNotifications)
+          ..where((b) => b.broadcastId.equals(id)))
+        .getSingle();
   }
 
   Future<List<IsarBroadcastNotification>> listBroadcasts() async {
-    final all = await _isar.isarBroadcastNotifications.where().findAll();
-    all.sort((a, b) => b.sentAt.compareTo(a.sentAt));
-    return all;
+    return (_db.select(_db.isarBroadcastNotifications)
+          ..orderBy([(b) => OrderingTerm.desc(b.sentAt)]))
+        .get();
   }
 
-  // ────────────────────────────────────────────────────────────
-  // Audit log
-  // ────────────────────────────────────────────────────────────
+  // ── Audit log ──
 
   Future<List<IsarAdminAction>> auditLog({int limit = 100}) async {
-    final actions = await _isar.isarAdminActions.where().findAll();
-    actions.sort((a, b) => b.at.compareTo(a.at));
-    return actions.take(limit).toList();
+    return (_db.select(_db.isarAdminActions)
+          ..orderBy([(a) => OrderingTerm.desc(a.at)])
+          ..limit(limit))
+        .get();
   }
 
   Future<void> _audit(
@@ -520,17 +534,15 @@ class AdminRepository {
     String entityId,
     Map<String, dynamic>? details,
   ) async {
-    final record = IsarAdminAction()
-      ..actorEmail = actor.email
-      ..actorRole = actor.role
-      ..action = action
-      ..entityType = entityType
-      ..entityId = entityId
-      ..at = DateTime.now()
-      ..details = details == null ? null : jsonEncode(details);
-    await _isar.writeTxn(() async {
-      await _isar.isarAdminActions.put(record);
-    });
+    await _db.into(_db.isarAdminActions).insert(IsarAdminActionsCompanion.insert(
+          actorEmail: actor.email,
+          actorRole: actor.role,
+          action: action,
+          entityType: entityType,
+          entityId: entityId,
+          at: DateTime.now(),
+          details: Value(details == null ? null : jsonEncode(details)),
+        ));
   }
 }
 
@@ -637,5 +649,35 @@ class AdminEventInput {
         section: e.section,
         sortOrder: e.sortOrder,
         isPublished: e.isPublished,
+      );
+}
+
+class PromoInput {
+  final String code;
+  final String label;
+  final String emoji;
+  final String discountType;
+  final double discountValue;
+  final double minSubtotal;
+  final int maxUses;
+
+  const PromoInput({
+    required this.code,
+    required this.label,
+    this.emoji = '🎁',
+    required this.discountType,
+    required this.discountValue,
+    this.minSubtotal = 0,
+    this.maxUses = 0,
+  });
+
+  factory PromoInput.fromPromo(IsarPromoCode p) => PromoInput(
+        code: p.code,
+        label: p.label,
+        emoji: p.emoji,
+        discountType: p.discountType,
+        discountValue: p.discountValue,
+        minSubtotal: p.minSubtotal,
+        maxUses: p.maxUses,
       );
 }

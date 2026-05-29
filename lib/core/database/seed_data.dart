@@ -1,131 +1,88 @@
-import 'package:isar/isar.dart';
-import '../database/isar_collections.dart';
+import 'package:drift/drift.dart';
+import 'app_database.dart';
 
-/// Seeds the local database with demo events on first launch.
-/// User profile is created during registration — not seeded here.
+/// Seeds the database with demo events, default app settings, and promo codes
+/// on first launch (and re-seeds when the seed marker is missing).
 class SeedData {
   SeedData._();
 
   /// Marker event ID — bump when seed content changes to force re-seed.
   static const _seedMarkerEventId = 'biennale-design-2026';
 
-  static Future<void> seedIfEmpty(Isar isar) async {
-    // Always make sure app-wide singletons exist
-    await _seedAppSettingsIfMissing(isar);
-    await _seedPromoCodesIfMissing(isar);
+  static Future<void> seedIfEmpty(AppDatabase db) async {
+    await _seedAppSettingsIfMissing(db);
+    await _seedPromoCodesIfMissing(db);
 
-    // If the latest seed marker exists, we have current event content
-    final marker = await isar.isarEvents
-        .filter()
-        .eventIdEqualTo(_seedMarkerEventId)
-        .findFirst();
+    final marker = await (db.select(db.isarEvents)
+          ..where((e) => e.eventId.equals(_seedMarkerEventId)))
+        .getSingleOrNull();
     if (marker != null) return;
 
-    // Stale or empty — wipe events and re-seed
-    await isar.writeTxn(() async {
-      await isar.isarEvents.clear();
-    });
-    await _seedEvents(isar);
+    await db.delete(db.isarEvents).go();
+    await _seedEvents(db);
   }
 
-  static Future<void> _seedAppSettingsIfMissing(Isar isar) async {
-    final existing =
-        await isar.isarAppSettings.filter().keyEqualTo('app').findFirst();
+  static Future<void> _seedAppSettingsIfMissing(AppDatabase db) async {
+    final existing = await (db.select(db.isarAppSettingsTable)
+          ..where((s) => s.key.equals('app')))
+        .getSingleOrNull();
     if (existing != null) return;
-    final defaults = IsarAppSettings()
-      ..key = 'app'
-      ..taxRate = 0.20
-      ..serviceFeeRate = 0.05
-      ..supportEmail = 'support@pulsar.app'
-      ..maintenanceMode = false
-      ..maintenanceMessage = ''
-      ..featuredEventIds = const []
-      ..maxTicketsPerOrder = 10
-      ..currencyCode = 'EUR'
-      ..currencySymbol = '€'
-      ..updatedAt = DateTime.now()
-      ..paymentSimulation = true;
-    await isar.writeTxn(() async {
-      await isar.isarAppSettings.put(defaults);
-    });
+    await db.into(db.isarAppSettingsTable).insert(
+          IsarAppSettingsTableCompanion.insert(
+            key: 'app',
+            taxRate: 0.20,
+            serviceFeeRate: 0.05,
+            supportEmail: 'support@pulsar.app',
+            maintenanceMode: false,
+            maintenanceMessage: '',
+            maxTicketsPerOrder: 10,
+            currencyCode: 'EUR',
+            currencySymbol: '€',
+            updatedAt: DateTime.now(),
+          ),
+        );
   }
 
-  static Future<void> _seedPromoCodesIfMissing(Isar isar) async {
-    final existing = await isar.isarPromoCodes.count();
-    if (existing > 0) return;
+  static Future<void> _seedPromoCodesIfMissing(AppDatabase db) async {
+    final existing = await db.select(db.isarPromoCodes).get();
+    if (existing.isNotEmpty) return;
 
     final now = DateTime.now();
-    final promos = <IsarPromoCode>[
-      IsarPromoCode()
-        ..code = 'PULSAR10'
-        ..label = '10% sur ta première commande'
-        ..emoji = '✨'
-        ..discountType = 'percent'
-        ..discountValue = 10
-        ..minSubtotal = 0
-        ..maxUses = 0
-        ..usedCount = 0
-        ..isActive = true
-        ..createdAt = now
-        ..createdByEmail = 'seed@pulsar.app',
-      IsarPromoCode()
-        ..code = 'ECO20'
-        ..label = '20% — Mode éco activé'
-        ..emoji = '🌱'
-        ..discountType = 'percent'
-        ..discountValue = 20
-        ..minSubtotal = 100
-        ..maxUses = 0
-        ..usedCount = 0
-        ..isActive = true
-        ..createdAt = now
-        ..createdByEmail = 'seed@pulsar.app',
-      IsarPromoCode()
-        ..code = 'SUMMER50'
-        ..label = "50€ sur les festivals d'été"
-        ..emoji = '☀️'
-        ..discountType = 'fixed'
-        ..discountValue = 50
-        ..minSubtotal = 200
-        ..maxUses = 0
-        ..usedCount = 0
-        ..isActive = true
-        ..createdAt = now
-        ..createdByEmail = 'seed@pulsar.app',
-      IsarPromoCode()
-        ..code = 'STUDENT15'
-        ..label = '15% étudiant'
-        ..emoji = '🎓'
-        ..discountType = 'percent'
-        ..discountValue = 15
-        ..minSubtotal = 0
-        ..maxUses = 0
-        ..usedCount = 0
-        ..isActive = true
-        ..createdAt = now
-        ..createdByEmail = 'seed@pulsar.app',
-      IsarPromoCode()
-        ..code = 'BLACKFRIDAY'
-        ..label = '-30% Black Friday'
-        ..emoji = '🛍️'
-        ..discountType = 'percent'
-        ..discountValue = 30
-        ..minSubtotal = 150
-        ..maxUses = 0
-        ..usedCount = 0
-        ..isActive = true
-        ..createdAt = now
-        ..createdByEmail = 'seed@pulsar.app',
+    final seed = [
+      _promo('PULSAR10', '10% sur ta première commande', '✨', 'percent', 10, 0),
+      _promo('ECO20', '20% — Mode éco activé', '🌱', 'percent', 20, 100),
+      _promo('SUMMER50', "50€ sur les festivals d'été", '☀️', 'fixed', 50, 200),
+      _promo('STUDENT15', '15% étudiant', '🎓', 'percent', 15, 0),
+      _promo('BLACKFRIDAY', '-30% Black Friday', '🛍️', 'percent', 30, 150),
     ];
-    await isar.writeTxn(() async {
-      await isar.isarPromoCodes.putAll(promos);
-    });
+    for (final p in seed) {
+      await db.into(db.isarPromoCodes).insert(p.copyWith(createdAt: Value(now)));
+    }
   }
 
-  static Future<void> _seedEvents(Isar isar) async {
-    final events = <IsarEvent>[
-      // ── Trending ──
-      _makeEvent(
+  static IsarPromoCodesCompanion _promo(
+    String code,
+    String label,
+    String emoji,
+    String type,
+    double value,
+    double min,
+  ) =>
+      IsarPromoCodesCompanion.insert(
+        code: code,
+        label: label,
+        emoji: emoji,
+        discountType: type,
+        discountValue: value,
+        minSubtotal: min,
+        maxUses: 0,
+        createdAt: DateTime.now(),
+        createdByEmail: const Value('seed@pulsar.app'),
+      );
+
+  static Future<void> _seedEvents(AppDatabase db) async {
+    final events = <IsarEventsCompanion>[
+      _event(
         eventId: 'hellfest-2026',
         name: 'Hellfest 2026',
         category: 'Festival',
@@ -147,7 +104,7 @@ class SeedData {
         section: 'trending',
         sortOrder: 0,
       ),
-      _makeEvent(
+      _event(
         eventId: 'we-love-green-2026',
         name: 'We Love Green',
         category: 'Festival',
@@ -169,7 +126,7 @@ class SeedData {
         section: 'trending',
         sortOrder: 1,
       ),
-      _makeEvent(
+      _event(
         eventId: 'paris-games-week-2026',
         name: 'Paris Games Week',
         category: 'Salon',
@@ -191,7 +148,7 @@ class SeedData {
         section: 'trending',
         sortOrder: 2,
       ),
-      _makeEvent(
+      _event(
         eventId: 'festival-avignon-2026',
         name: "Festival d'Avignon",
         category: 'Festival',
@@ -213,9 +170,7 @@ class SeedData {
         section: 'trending',
         sortOrder: 3,
       ),
-
-      // ── Upcoming ──
-      _makeEvent(
+      _event(
         eventId: 'phoenix-olympia-2026',
         name: "Phoenix à l'Olympia",
         category: 'Concert',
@@ -226,10 +181,8 @@ class SeedData {
         date: '12 février 2026',
         location: 'Paris, Olympia',
         transport: 'Métro direct',
-        accommodation: null,
         pricingLabel: 'Billet seul',
         pricingAmount: 68,
-        pricingSavings: null,
         pricingSavingsText: '✅ Transport gratuit',
         genres: ['rock', 'pop'],
         badgeTypes: ['eco'],
@@ -237,7 +190,7 @@ class SeedData {
         section: 'upcoming',
         sortOrder: 0,
       ),
-      _makeEvent(
+      _event(
         eventId: 'solidays-2026',
         name: 'Solidays 2026',
         category: 'Festival',
@@ -248,7 +201,6 @@ class SeedData {
         date: '26-28 juin 2026',
         location: 'Hippodrome de Longchamp, Paris',
         transport: 'Métro + navette • 5€',
-        accommodation: null,
         pricingLabel: 'Pass 3 jours',
         pricingAmount: 159,
         pricingSavings: 90,
@@ -258,7 +210,7 @@ class SeedData {
         section: 'upcoming',
         sortOrder: 1,
       ),
-      _makeEvent(
+      _event(
         eventId: 'nuit-musees-2026',
         name: 'Nuit des Musées',
         category: 'Événement',
@@ -269,10 +221,8 @@ class SeedData {
         date: '16 mai 2026',
         location: 'Musées de Paris',
         transport: 'Métro direct',
-        accommodation: null,
         pricingLabel: 'Entrée',
         pricingAmount: 0,
-        pricingSavings: null,
         pricingSavingsText: '🎉 Gratuit',
         genres: ['culturel'],
         badgeTypes: ['new', 'eco'],
@@ -280,9 +230,7 @@ class SeedData {
         section: 'upcoming',
         sortOrder: 2,
       ),
-
-      // ── More trending ──
-      _makeEvent(
+      _event(
         eventId: 'rolland-garros-2026',
         name: 'Roland-Garros',
         category: 'Sport',
@@ -303,7 +251,7 @@ class SeedData {
         section: 'trending',
         sortOrder: 4,
       ),
-      _makeEvent(
+      _event(
         eventId: 'tomorrowland-2026',
         name: 'Tomorrowland Winter',
         category: 'Festival',
@@ -324,7 +272,7 @@ class SeedData {
         section: 'trending',
         sortOrder: 5,
       ),
-      _makeEvent(
+      _event(
         eventId: 'vieilles-charrues-2026',
         name: 'Les Vieilles Charrues',
         category: 'Festival',
@@ -345,20 +293,18 @@ class SeedData {
         section: 'trending',
         sortOrder: 6,
       ),
-
-      // ── More upcoming ──
-      _makeEvent(
+      _event(
         eventId: 'arctic-monkeys-2026',
         name: 'Arctic Monkeys',
         category: 'Concert',
         duration: '1 soir',
         imageUrl:
             'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?w=800',
-        gradient: 'linear-gradient(135deg, #3a1c71 0%, #d76d77 50%, #ffaf7b 100%)',
+        gradient:
+            'linear-gradient(135deg, #3a1c71 0%, #d76d77 50%, #ffaf7b 100%)',
         date: '8 octobre 2026',
         location: 'Accor Arena, Paris',
         transport: 'Métro Bercy direct',
-        accommodation: null,
         pricingLabel: 'Fosse debout',
         pricingAmount: 75,
         pricingSavings: 25,
@@ -368,7 +314,7 @@ class SeedData {
         section: 'upcoming',
         sortOrder: 3,
       ),
-      _makeEvent(
+      _event(
         eventId: 'jazz-marciac-2026',
         name: 'Jazz in Marciac',
         category: 'Festival',
@@ -389,7 +335,7 @@ class SeedData {
         section: 'upcoming',
         sortOrder: 4,
       ),
-      _makeEvent(
+      _event(
         eventId: 'gamescom-2026',
         name: 'Gamescom Paris',
         category: 'Salon',
@@ -410,7 +356,7 @@ class SeedData {
         section: 'upcoming',
         sortOrder: 5,
       ),
-      _makeEvent(
+      _event(
         eventId: 'opera-aida-2026',
         name: 'Aida — Opéra Bastille',
         category: 'Opéra',
@@ -421,17 +367,15 @@ class SeedData {
         date: '22 septembre 2026',
         location: 'Opéra Bastille, Paris',
         transport: 'Métro Bastille direct',
-        accommodation: null,
         pricingLabel: 'Catégorie 3',
         pricingAmount: 95,
-        pricingSavings: null,
         genres: ['opera', 'classique'],
         badgeTypes: ['eco'],
         badgeTexts: ['🌱 -92% CO₂'],
         section: 'upcoming',
         sortOrder: 6,
       ),
-      _makeEvent(
+      _event(
         eventId: 'marathon-paris-2026',
         name: 'Marathon de Paris',
         category: 'Sport',
@@ -442,10 +386,8 @@ class SeedData {
         date: '12 avril 2026',
         location: 'Champs-Élysées, Paris',
         transport: 'Métro inclus',
-        accommodation: null,
         pricingLabel: 'Dossard runner',
         pricingAmount: 119,
-        pricingSavings: null,
         pricingSavingsText: '🏃 Inclut tee-shirt + médaille',
         genres: ['sport', 'running'],
         badgeTypes: ['hot', 'eco'],
@@ -453,8 +395,8 @@ class SeedData {
         section: 'trending',
         sortOrder: 7,
       ),
-      _makeEvent(
-        eventId: 'biennale-design-2026',
+      _event(
+        eventId: _seedMarkerEventId,
         name: 'Biennale Internationale Design',
         category: 'Exposition',
         duration: '6 semaines',
@@ -475,13 +417,12 @@ class SeedData {
         sortOrder: 7,
       ),
     ];
-
-    await isar.writeTxn(() async {
-      await isar.isarEvents.putAll(events);
+    await db.batch((b) {
+      b.insertAll(db.isarEvents, events);
     });
   }
 
-  static IsarEvent _makeEvent({
+  static IsarEventsCompanion _event({
     required String eventId,
     required String name,
     required String category,
@@ -502,27 +443,27 @@ class SeedData {
     required String section,
     required int sortOrder,
   }) {
-    return IsarEvent()
-      ..eventId = eventId
-      ..name = name
-      ..category = category
-      ..duration = duration
-      ..imageUrl = imageUrl
-      ..gradient = gradient
-      ..date = date
-      ..location = location
-      ..transport = transport
-      ..accommodation = accommodation
-      ..pricingLabel = pricingLabel
-      ..pricingAmount = pricingAmount
-      ..pricingSavings = pricingSavings
-      ..pricingSavingsText = pricingSavingsText
-      ..currency = '€'
-      ..genres = genres
-      ..badgeTypes = badgeTypes
-      ..badgeTexts = badgeTexts
-      ..isFavorite = false
-      ..section = section
-      ..sortOrder = sortOrder;
+    return IsarEventsCompanion.insert(
+      eventId: eventId,
+      name: name,
+      category: category,
+      duration: duration,
+      imageUrl: imageUrl,
+      gradient: gradient,
+      date: date,
+      location: location,
+      transport: transport,
+      accommodation: Value(accommodation),
+      pricingLabel: pricingLabel,
+      pricingAmount: pricingAmount,
+      pricingSavings: Value(pricingSavings),
+      pricingSavingsText: Value(pricingSavingsText),
+      currency: const Value('€'),
+      genres: Value(genres),
+      badgeTypes: Value(badgeTypes),
+      badgeTexts: Value(badgeTexts),
+      section: section,
+      sortOrder: Value(sortOrder),
+    );
   }
 }

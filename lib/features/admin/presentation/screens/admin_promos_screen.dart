@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:isar/isar.dart';
-import '../../../../core/database/isar_collections.dart';
+import '../../../../core/database/app_database.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../data/admin_repository.dart';
 import '../providers/admin_provider.dart';
 
 class AdminPromosScreen extends ConsumerWidget {
@@ -24,7 +24,7 @@ class AdminPromosScreen extends ConsumerWidget {
         ),
         title: Row(
           children: [
-            const Text('🏷️', style: TextStyle(fontSize: 22)),
+            const Text('�?��?', style: TextStyle(fontSize: 22)),
             const SizedBox(width: 8),
             Text('CODES PROMO',
                 style: PulsarTheme.display(24,
@@ -94,7 +94,7 @@ class AdminPromosScreen extends ConsumerWidget {
   ) async {
     final code = TextEditingController(text: existing?.code ?? '');
     final label = TextEditingController(text: existing?.label ?? '');
-    final emoji = TextEditingController(text: existing?.emoji ?? '🎁');
+    final emoji = TextEditingController(text: existing?.emoji ?? '�?');
     final value = TextEditingController(
         text: existing?.discountValue.toStringAsFixed(0) ?? '10');
     final minSubtotal = TextEditingController(
@@ -120,7 +120,7 @@ class AdminPromosScreen extends ConsumerWidget {
                       width: 60,
                       child: TextField(
                         controller: emoji,
-                        decoration: const InputDecoration(labelText: '🎁'),
+                        decoration: const InputDecoration(labelText: '�?'),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -206,23 +206,19 @@ class AdminPromosScreen extends ConsumerWidget {
     final actor = ref.read(currentProfileProvider);
     if (actor == null) return;
 
-    final promo = existing ?? IsarPromoCode();
-    if (existing == null) {
-      promo
-        ..isarId = Isar.autoIncrement
-        ..usedCount = 0
-        ..isActive = true;
-    }
-    promo
-      ..code = code.text.trim().toUpperCase()
-      ..label = label.text.trim()
-      ..emoji = emoji.text.trim().isEmpty ? '🎁' : emoji.text.trim()
-      ..discountType = type
-      ..discountValue = double.tryParse(value.text.trim()) ?? 0
-      ..minSubtotal = double.tryParse(minSubtotal.text.trim()) ?? 0
-      ..maxUses = int.tryParse(maxUses.text.trim()) ?? 0;
+    final input = PromoInput(
+      code: code.text.trim().toUpperCase(),
+      label: label.text.trim(),
+      emoji: emoji.text.trim().isEmpty ? '🎁' : emoji.text.trim(),
+      discountType: type,
+      discountValue: double.tryParse(value.text.trim()) ?? 0,
+      minSubtotal: double.tryParse(minSubtotal.text.trim()) ?? 0,
+      maxUses: int.tryParse(maxUses.text.trim()) ?? 0,
+    );
 
-    await ref.read(adminRepositoryProvider).savePromo(actor: actor, promo: promo);
+    await ref
+        .read(adminRepositoryProvider)
+        .savePromo(actor: actor, input: input);
     ref.invalidate(adminPromosListProvider);
     ref.invalidate(activePromosProvider);
   }

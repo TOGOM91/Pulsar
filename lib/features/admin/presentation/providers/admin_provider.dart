@@ -1,15 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/database/isar_collections.dart';
+import '../../../../core/database/app_database.dart';
 import '../../../../core/providers/core_providers.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../data/admin_repository.dart';
 import '../../domain/role.dart';
 
-/// Singleton admin repository — Isar-backed.
+/// Singleton admin repository — Drift/SQLite-backed.
 final adminRepositoryProvider = Provider<AdminRepository>((ref) {
-  final isar = ref.watch(isarProvider).value;
-  if (isar == null) throw StateError('Isar not initialized');
-  return AdminRepository(isar);
+  return AdminRepository(ref.watch(appDatabaseProvider));
 });
 
 /// Connected user role (defaults to user if not authenticated).

@@ -7,8 +7,9 @@ import 'package:firebase_core/firebase_core.dart';
 
 import 'core/theme/app_theme.dart';
 import 'core/router/app_router.dart';
-import 'core/database/isar_service.dart';
+import 'core/database/app_database.dart';
 import 'core/database/seed_data.dart';
+import 'core/providers/core_providers.dart';
 import 'core/providers/theme_provider.dart';
 import 'core/providers/locale_provider.dart';
 import 'features/auth/presentation/providers/auth_provider.dart';
@@ -57,13 +58,14 @@ void main() async {
     }
   }
 
-  final isar = await IsarService.instance;
-  await SeedData.seedIfEmpty(isar);
+  final db = AppDatabase();
+  await SeedData.seedIfEmpty(db);
 
   runApp(
     ProviderScope(
       overrides: [
         firebaseReadyProvider.overrideWithValue(firebaseReady),
+        appDatabaseProvider.overrideWithValue(db),
       ],
       child: const PulsarApp(),
     ),

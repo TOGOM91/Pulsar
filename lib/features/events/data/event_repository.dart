@@ -1,128 +1,107 @@
-import 'package:isar/isar.dart';
-import '../../../core/database/isar_collections.dart';
+import 'package:drift/drift.dart';
+import '../../../core/database/app_database.dart';
 import '../domain/event_model.dart';
 
-/// Repository for event data. Reads/writes to Isar (offline-first).
+/// Repository for event data. Reads/writes to SQLite via Drift.
 class EventRepository {
-  final Isar _isar;
+  final AppDatabase _db;
 
-  EventRepository(this._isar);
+  EventRepository(this._db);
 
   // ── Queries ──
 
-  /// Get all events for a section ("trending" / "upcoming").
   Future<List<EventModel>> getEventsBySection(String section) async {
-    final results = await _isar.isarEvents
-        .filter()
-        .sectionEqualTo(section)
-        .sortBySortOrder()
-        .findAll();
-    return results.map(_toModel).toList();
+    final rows = await (_db.select(_db.isarEvents)
+          ..where((e) => e.section.equals(section) & e.isPublished.equals(true))
+          ..orderBy([(e) => OrderingTerm(expression: e.sortOrder)]))
+        .get();
+    return rows.map(_toModel).toList();
   }
 
-  /// Get all events.
   Future<List<EventModel>> getAllEvents() async {
-    final results = await _isar.isarEvents.where().findAll();
-    return results.map(_toModel).toList();
+    final rows = await (_db.select(_db.isarEvents)
+          ..where((e) => e.isPublished.equals(true)))
+        .get();
+    return rows.map(_toModel).toList();
   }
 
-  /// Get single event by ID.
   Future<EventModel?> getEventById(String eventId) async {
-    final result = await _isar.isarEvents
-        .filter()
-        .eventIdEqualTo(eventId)
-        .findFirst();
-    return result != null ? _toModel(result) : null;
+    final row = await (_db.select(_db.isarEvents)
+          ..where((e) => e.eventId.equals(eventId)))
+        .getSingleOrNull();
+    return row != null ? _toModel(row) : null;
   }
 
-  /// Search events by name or genre.
   Future<List<EventModel>> searchEvents(String query) async {
     final lower = query.toLowerCase();
-    final all = await _isar.isarEvents.where().findAll();
-    final filtered = all.where((e) {
+    final all = await getAllEvents();
+    return all.where((e) {
       return e.name.toLowerCase().contains(lower) ||
           e.category.toLowerCase().contains(lower) ||
-          e.location.toLowerCase().contains(lower) ||
+          e.details.location.toLowerCase().contains(lower) ||
           e.genres.any((g) => g.toLowerCase().contains(lower));
     }).toList();
-    return filtered.map(_toModel).toList();
   }
 
-  /// Filter events by genre.
   Future<List<EventModel>> filterByGenre(String genre) async {
-    final all = await _isar.isarEvents.where().findAll();
-    final filtered = all.where((e) {
-      return e.genres.any(
-        (g) => g.toLowerCase() == genre.toLowerCase(),
-      );
+    final all = await getAllEvents();
+    return all.where((e) {
+      return e.genres.any((g) => g.toLowerCase() == genre.toLowerCase());
     }).toList();
-    return filtered.map(_toModel).toList();
   }
 
-  /// Current logged-in user email, or null if none.
   Future<String?> _currentUserEmail() async {
-    final session = await _isar.isarAuthSessions
-        .filter()
-        .keyEqualTo('session')
-        .findFirst();
-    return session?.activeEmail;
+    final row = await (_db.select(_db.isarAuthSessions)
+          ..where((s) => s.key.equals('session')))
+        .getSingleOrNull();
+    return row?.activeEmail;
   }
 
-  /// Get favorite events for the current user.
   Future<List<EventModel>> getFavorites() async {
     final email = await _currentUserEmail();
     if (email == null) return [];
-    final favs = await _isar.isarFavorites
-        .filter()
-        .userEmailEqualTo(email)
-        .findAll();
+    final favs = await (_db.select(_db.isarFavorites)
+          ..where((f) => f.userEmail.equals(email)))
+        .get();
     final ids = favs.map((f) => f.eventId).toSet();
     if (ids.isEmpty) return [];
-    final all = await _isar.isarEvents.where().findAll();
-    return all.where((e) => ids.contains(e.eventId)).map(_toModel).toList();
+    final all = await getAllEvents();
+    return all.where((e) => ids.contains(e.id)).toList();
   }
 
   // ── Mutations ──
 
-  /// Toggle favorite status for an event for the current user.
-  /// Returns true if now favorited, false if removed, null if no user.
   Future<bool?> toggleFavorite(String eventId) async {
     final email = await _currentUserEmail();
     if (email == null) return null;
 
-    final existing = await _isar.isarFavorites
-        .filter()
-        .userEmailEqualTo(email)
-        .and()
-        .eventIdEqualTo(eventId)
-        .findFirst();
+    final existing = await (_db.select(_db.isarFavorites)
+          ..where((f) => f.userEmail.equals(email) & f.eventId.equals(eventId)))
+        .getSingleOrNull();
 
-    await _isar.writeTxn(() async {
-      if (existing != null) {
-        await _isar.isarFavorites.delete(existing.isarId);
-      } else {
-        final fav = IsarFavorite()
-          ..userEmail = email
-          ..eventId = eventId
-          ..addedAt = DateTime.now();
-        await _isar.isarFavorites.put(fav);
-      }
-    });
-
-    return existing == null;
+    if (existing != null) {
+      await (_db.delete(_db.isarFavorites)
+            ..where((f) => f.isarId.equals(existing.isarId)))
+          .go();
+      return false;
+    }
+    await _db.into(_db.isarFavorites).insert(
+          IsarFavoritesCompanion.insert(
+            userEmail: email,
+            eventId: eventId,
+            addedAt: DateTime.now(),
+          ),
+        );
+    return true;
   }
 
-  /// Check if an event is favorited by the current user.
   Future<bool> isFavorite(String eventId) async {
     final email = await _currentUserEmail();
     if (email == null) return false;
-    final existing = await _isar.isarFavorites
-        .filter()
-        .userEmailEqualTo(email)
-        .and()
-        .eventIdEqualTo(eventId)
-        .findFirst();
-    return existing != null;
+    final row = await (_db.select(_db.isarFavorites)
+          ..where((f) => f.userEmail.equals(email) & f.eventId.equals(eventId)))
+        .getSingleOrNull();
+    return row != null;
   }
 
   // ── Mappers ──

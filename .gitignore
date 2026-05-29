@@ -1,6 +1,41 @@
+# Build / generated
 build/
 .dart_tool/
-.idea/
 .flutter-plugins-dependencies
-.firebase/
+.flutter-plugins
+
+# IDE
+.idea/
+.vscode/
 *.iml
+*.code-workspace
+
+# Firebase deploy cache
+.firebase/
+
+# Tooling tmp files
+*.tmp
+*.bak
+
+# Secrets — NEVER commit
+android/key.properties
+android/keystore/
+*.jks
+*.keystore
+.env
+.env.*
+!.env.example
+
+# Distributables (uploaded as release assets, not in git)
+apk-distributable/
+landing/downloads/*.zip
+landing/downloads/*.apk
+landing/downloads/*.exe
+landing/downloads/*.dmg
+landing/downloads/*.ipa
+
+# Internal business docs
+pulsar/
+
+# Claude Code agent config (machine-specific)
+.claude/

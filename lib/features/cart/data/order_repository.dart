@@ -1,12 +1,12 @@
-import 'package:isar/isar.dart';
+import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
-import '../../../core/database/isar_collections.dart';
+import '../../../core/database/app_database.dart';
 
 class OrderRepository {
-  final Isar _isar;
+  final AppDatabase _db;
   static const _uuid = Uuid();
 
-  OrderRepository(this._isar);
+  OrderRepository(this._db);
 
   Future<IsarOrder> createPending({
     required String customerEmail,
@@ -22,71 +22,62 @@ class OrderRepository {
     String? paymentLast4,
     required int itemCount,
   }) async {
-    final order = IsarOrder()
-      ..orderId = 'ord-${_uuid.v4().substring(0, 8)}'
-      ..customerEmail = customerEmail
-      ..placedAt = DateTime.now()
-      ..subtotal = subtotal
-      ..discount = discount
-      ..serviceFee = serviceFee
-      ..tax = tax
-      ..total = total
-      ..currency = currency
-      ..promoCode = promoCode
-      ..paymentMethod = paymentMethod
-      ..paymentBrand = paymentBrand
-      ..paymentLast4 = paymentLast4
-      ..status = 'pending'
-      ..itemCount = itemCount
-      ..ticketIds = const [];
-    await _isar.writeTxn(() async {
-      await _isar.isarOrders.put(order);
-    });
-    return order;
+    final orderId = 'ord-${_uuid.v4().substring(0, 8)}';
+    await _db.into(_db.isarOrders).insert(IsarOrdersCompanion.insert(
+          orderId: orderId,
+          customerEmail: customerEmail,
+          placedAt: DateTime.now(),
+          subtotal: subtotal,
+          discount: discount,
+          serviceFee: serviceFee,
+          tax: tax,
+          total: total,
+          currency: currency,
+          promoCode: Value(promoCode),
+          paymentMethod: paymentMethod,
+          paymentBrand: paymentBrand,
+          paymentLast4: Value(paymentLast4),
+          status: 'pending',
+          itemCount: itemCount,
+        ));
+    final row = await (_db.select(_db.isarOrders)
+          ..where((o) => o.orderId.equals(orderId)))
+        .getSingle();
+    return row;
   }
 
   Future<IsarOrder> markPaid({
     required String orderId,
     required List<String> ticketIds,
   }) async {
-    final order = await _isar.isarOrders
-        .filter()
-        .orderIdEqualTo(orderId)
-        .findFirst();
-    if (order == null) throw StateError('Order $orderId not found');
-    order
-      ..status = 'paid'
-      ..ticketIds = ticketIds;
-    await _isar.writeTxn(() async {
-      await _isar.isarOrders.put(order);
-    });
-    return order;
+    await (_db.update(_db.isarOrders)
+          ..where((o) => o.orderId.equals(orderId)))
+        .write(IsarOrdersCompanion(
+      status: const Value('paid'),
+      ticketIds: Value(ticketIds),
+    ));
+    return (_db.select(_db.isarOrders)..where((o) => o.orderId.equals(orderId)))
+        .getSingle();
   }
 
   Future<IsarOrder> markFailed({
     required String orderId,
     required String reason,
   }) async {
-    final order = await _isar.isarOrders
-        .filter()
-        .orderIdEqualTo(orderId)
-        .findFirst();
-    if (order == null) throw StateError('Order $orderId not found');
-    order
-      ..status = 'failed'
-      ..failureReason = reason;
-    await _isar.writeTxn(() async {
-      await _isar.isarOrders.put(order);
-    });
-    return order;
+    await (_db.update(_db.isarOrders)
+          ..where((o) => o.orderId.equals(orderId)))
+        .write(IsarOrdersCompanion(
+      status: const Value('failed'),
+      failureReason: Value(reason),
+    ));
+    return (_db.select(_db.isarOrders)..where((o) => o.orderId.equals(orderId)))
+        .getSingle();
   }
 
   Future<List<IsarOrder>> ordersForCustomer(String email) async {
-    final orders = await _isar.isarOrders
-        .filter()
-        .customerEmailEqualTo(email, caseSensitive: false)
-        .findAll();
-    orders.sort((a, b) => b.placedAt.compareTo(a.placedAt));
-    return orders;
+    return (_db.select(_db.isarOrders)
+          ..where((o) => o.customerEmail.equals(email))
+          ..orderBy([(o) => OrderingTerm.desc(o.placedAt)]))
+        .get();
   }
 }
