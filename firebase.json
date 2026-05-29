@@ -1,0 +1,48 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "pulsar-7d45e",
+          "appId": "1:549197052617:android:40e504b516207500bdeb18",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "pulsar-7d45e",
+          "configurations": {
+            "android": "1:549197052617:android:40e504b516207500bdeb18",
+            "ios": "1:549197052617:ios:64703950755c2d4dbdeb18",
+            "macos": "1:549197052617:ios:64703950755c2d4dbdeb18",
+            "web": "1:549197052617:web:ce42ac576539ba04bdeb18",
+            "windows": "1:549197052617:web:a2f3801fa7b25fcbbdeb18"
+          }
+        }
+      }
+    }
+  },
+  "hosting": {
+    "site": "pulsar-7d45e",
+    "public": "landing",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(zip|exe)",
+        "headers": [
+          { "key": "Content-Disposition", "value": "attachment" }
+        ]
+      }
+    ]
+  }
+}
