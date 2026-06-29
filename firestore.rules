@@ -1,0 +1,153 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+
+    function authed() {
+      return request.auth != null;
+    }
+
+    function myEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    // Bootstrap owner — the only identity allowed to grant itself the `owner`
+    // role on first sign-in (mirrors kOwnerEmails in the Dart AuthService).
+    // Keep this in sync with lib/features/admin/domain/role.dart.
+    function isBootstrapOwner() {
+      return authed() && myEmail() == 'tom.farge@outlook.fr';
+    }
+
+    // Read the caller's role from their Firestore profile (cached by Firestore SDK).
+    function myRole() {
+      return get(/databases/$(database)/documents/users/$(myEmail())).data.get('role', 'user');
+    }
+
+    function isAdmin() {
+      return authed() && myRole() in ['owner', 'collaborator'];
+    }
+
+    function isOwner() {
+      return authed() && myRole() == 'owner';
+    }
+
+    // True when the incoming write leaves `field` identical to the stored value.
+    function unchanged(field) {
+      return request.resource.data.get(field, null) == resource.data.get(field, null);
+    }
+
+    // ── Users ──────────────────────────────────────────────────────────────
+
+    match /users/{email} {
+      // A user can read their own profile; admins can read all profiles.
+      allow read: if authed() && (myEmail() == email || isAdmin());
+
+      // Self-provisioning: a user may create only their own profile, may not
+      // grant themselves a privileged role (except the bootstrap owner), and
+      // may not start out suspended.
+      allow create: if authed() && myEmail() == email
+                    && (request.resource.data.get('role', 'user') == 'user' || isBootstrapOwner())
+                    && request.resource.data.get('isSuspended', false) == false;
+
+      // Self-update: profile/preferences/stats may change, but the caller can
+      // never escalate their own role (unless bootstrap owner) nor alter their
+      // own suspension state — those are reserved for the owner.
+      allow update: if authed() && myEmail() == email
+                    && (unchanged('role') || isBootstrapOwner())
+                    && unchanged('isSuspended')
+                    && unchanged('suspendedReason')
+                    && unchanged('suspendedAt');
+
+      // Role changes and suspension are owner-only operations.
+      allow update: if isOwner();
+
+      allow delete: if authed() && (myEmail() == email || isOwner());
+
+      match /cart/{item} {
+        allow read, write: if authed() && myEmail() == email;
+      }
+      match /favorites/{eventId} {
+        allow read, write: if authed() && myEmail() == email;
+      }
+      match /payment_methods/{methodId} {
+        allow read, write: if authed() && myEmail() == email;
+      }
+    }
+
+    // ── Events ─────────────────────────────────────────────────────────────
+
+    match /events/{eventId} {
+      // Published events are readable by anyone (even unauthenticated — needed
+      // for the landing/explore screen before login). authed() is checked first
+      // inside isAdmin() so the unauthenticated path never calls myRole().
+      allow read:  if resource.data.get('isPublished', true) == true || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // ── Tickets ────────────────────────────────────────────────────────────
+    // Tickets are now created/mutated ONLY by Cloud Functions (Admin SDK, which
+    // bypasses these rules) on a verified Stripe payment. Clients can read their
+    // own tickets and perform owner-driven lifecycle changes (cancel/transfer)
+    // without ever rewriting ownership/price; they can never create a ticket.
+
+    match /tickets/{ticketId} {
+      allow read:   if authed() && (resource.data.ownerEmail == myEmail() || isAdmin());
+      allow create: if false; // server-only (payment fulfilment)
+      allow update: if isAdmin()
+                    || (authed() && resource.data.ownerEmail == myEmail()
+                        && unchanged('ownerEmail') && unchanged('price')
+                        && unchanged('eventId') && unchanged('orderId'));
+      allow delete: if isAdmin();
+    }
+
+    // ── Orders ─────────────────────────────────────────────────────────────
+    // Orders are created and marked paid ONLY by Cloud Functions after Stripe
+    // confirms the charge. Clients may read their own orders; refunds are
+    // admin-only. No client may write the financial fields or the status.
+
+    match /orders/{orderId} {
+      allow read:   if authed() && (resource.data.customerEmail == myEmail() || isAdmin());
+      allow create: if false; // server-only (createCheckoutSession)
+      allow update: if isAdmin(); // refunds; all payment writes are server-side
+      allow delete: if isAdmin();
+    }
+
+    // ── Promo codes ────────────────────────────────────────────────────────
+
+    match /promo_codes/{code} {
+      allow read:  if true;   // active promos shown in cart before login
+      allow write: if isAdmin();
+    }
+
+    // ── App settings ───────────────────────────────────────────────────────
+
+    match /app_settings/{doc} {
+      allow read:  if true;   // tax/service rates + publishable key needed at checkout
+      allow write: if isOwner();
+    }
+
+    // ── Admin actions (audit log) ──────────────────────────────────────────
+
+    match /admin_actions/{actionId} {
+      // Append-only audit trail. Reading the journal is owner-only (mirrors
+      // UserRole.canViewAuditLog); admins append their own actions; nobody may
+      // edit or delete history (tamper-evidence).
+      allow read:   if isOwner();
+      allow create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // ── Broadcasts ─────────────────────────────────────────────────────────
+
+    match /broadcasts/{broadcastId} {
+      allow read:  if authed();
+      allow write: if isAdmin();
+    }
+
+    // ── Default deny ─────────────────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
