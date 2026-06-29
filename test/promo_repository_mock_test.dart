@@ -1,4 +1,4 @@
-// Tests mock — PromoRepository (stub manuel + Mockito verify)
+// Tests mock de PromoRepository (stub manuel + Mockito verify)
 //
 // En Dart null-safe, mockito nécessite build_runner pour mocker les types
 // non-nullables. On utilise donc un stub manuel (classe Dart pure) qui
@@ -6,20 +6,20 @@
 // configurable par test, et vérification des appels.
 //
 // Concepts démontrés :
-//   • Stub synchrone  — retourner une valeur fixe
-//   • Stub asynchrone — simuler un appel réseau
-//   • Spy             — enregistrer les appels pour assertion
+//   • Stub synchrone   retourner une valeur fixe
+//   • Stub asynchrone  simuler un appel réseau
+//   • Spy    enregistrer les appels pour assertion
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flowee_app/features/cart/domain/promo_code.dart';
 
-// ── Interface (contrat) ───────────────────────────────────────────────────
+//Interface (contrat)
 
 abstract class PromoRepository {
   Future<PromoCode?> findByCode(String code);
   int get usageCount;
 }
 
-// ── Stub manuel (mock sans framework) ────────────────────────────────────
+// Stub manuel (mock sans framework)
 
 class _StubPromoRepository implements PromoRepository {
   final Map<String, PromoCode?> _codes = {};
@@ -39,7 +39,7 @@ class _StubPromoRepository implements PromoRepository {
   int get usageCount => _usageCount;
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────
+//Tests
 
 void main() {
   late _StubPromoRepository repo;

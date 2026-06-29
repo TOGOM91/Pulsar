@@ -1,5 +1,5 @@
-// Tests simples — TransportService et TransportOption
-// Aucune dépendance externe : service pur, 100 % synchrone.
+//Tests simples TransportService et TransportOption
+//Aucune dépendance externe : service pur, 100 % synchrone.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flowee_app/features/transport/data/transport_service.dart';
 import 'package:flowee_app/features/transport/domain/transport_models.dart';
@@ -7,7 +7,7 @@ import 'package:flowee_app/features/transport/domain/transport_models.dart';
 void main() {
   final svc = TransportService();
 
-  // ── Tests simples : routing ───────────────────────────────────────────────
+  //Tests simples : routing
 
   group('TransportService — routing', () {
     test('événement parisien retourne 4 options (métro/bus/vélo/voiture)', () {
@@ -61,7 +61,7 @@ void main() {
     });
   });
 
-  // ── Tests simples : propriétés calculées ─────────────────────────────────
+  //Tests simples : propriétés calculées
 
   group('TransportOption — durationLabel', () {
     test('formate les minutes seules', () {

@@ -1,4 +1,4 @@
-// Tests asynchrones — AuthService (chemins de validation)
+// Tests asynchrones AuthService (chemins de validation)
 //
 // Ces tests couvrent les gardes synchrones de register() et signIn() qui
 // retournent un Future<AuthFailure> AVANT tout appel Firebase. On peut donc
